@@ -1,0 +1,509 @@
+# json-function-engine
+
+A standalone JavaScript/TypeScript library for executing logic defined in JSON configuration files. Define functions, conditions, and actions in JSON — execute them against source code, JSON data, or any input. Lightweight, embeddable, and extensible.
+
+## Features
+
+- **Define functions in JSON** - Express logic as conditions and actions in JSON
+- **Execute against source files** - Scan codebases with regex, file filtering, and more
+- **Extensible** - Register custom conditions, actions, and reporters
+- **Multiple output formats** - JSON, Text, HTML, SARIF
+- **Performance** - Regex caching, parallel execution, ReDoS protection
+- **Zero runtime dependencies** - Keep your bundle small
+
+## Installation
+
+```bash
+npm install json-function-engine
+# or
+pnpm add json-function-engine
+# or
+yarn add json-function-engine
+```
+
+## Quick Start
+
+```typescript
+import { Engine } from 'json-function-engine';
+
+const engine = new Engine();
+
+// Define functions inline
+const functions = {
+  version: "1.0",
+  functions: [
+    {
+      id: "NO_TODO",
+      name: "No TODO comments",
+      enabled: true,
+      priority: 1,
+      condition: {
+        type: "regex",
+        pattern: "TODO",
+        fileExtensions: [".ts", ".tsx"]
+      },
+      action: {
+        type: "flag",
+        severity: "info",
+        message: "TODO comment found"
+      }
+    }
+  ]
+};
+
+// Add functions to engine
+engine.addFunctions(functions.functions);
+
+// Execute against source files
+const findings = await engine.execute([
+  { path: "src/auth.ts", content: "const TODO = 'implement auth';" }
+], { cwd: process.cwd() });
+
+// Format output
+console.log(engine.format(findings, "json", { pretty: true }));
+```
+
+## Your First Function
+
+A 5-minute guide to creating and running your first function:
+
+### Step 1: Create a function definition file
+
+Create `my-functions.json`:
+
+```json
+{
+  "version": "1.0",
+  "functions": [
+    {
+      "id": "DETECT_SECRETS",
+      "name": "No hardcoded secrets",
+      "condition": {
+        "type": "regex",
+        "pattern": "(api_key|password|secret)\\s*[:=]\\s*['\"][^'\"]+['\"]",
+        "fileExtensions": [".ts", ".js", ".env"]
+      },
+      "action": {
+        "type": "flag",
+        "severity": "critical",
+        "message": "Potential hardcoded secret detected"
+      }
+    }
+  ]
+}
+```
+
+### Step 2: Load and execute
+
+```typescript
+import { Engine } from 'json-function-engine';
+
+const engine = new Engine();
+
+// Load functions from file
+const result = await engine.loadFunctions('./my-functions.json');
+console.log(`Loaded ${result.loaded} functions`);
+
+// Execute against your codebase
+const findings = await engine.execute([
+  { path: "src/config.ts", content: "const api_key = 'sk-1234567890';" }
+]);
+
+// See results
+console.log(engine.format(findings, 'text'));
+```
+
+### Step 3: Output in different formats
+
+```typescript
+// JSON for programmatic use
+const json = engine.format(findings, 'json');
+
+// SARIF for GitHub Security
+const sarif = engine.format(findings, 'sarif', { version: '2.1' });
+
+// HTML report
+const html = engine.format(findings, 'html', { theme: 'dark' });
+```
+
+## Usage with Attune
+
+```typescript
+import { Engine } from 'json-function-engine';
+
+const engine = new Engine();
+const result = await engine.loadFunctions('./functions/*.json');
+
+console.log(`Loaded ${result.loaded} functions (${result.errors.length} errors)`);
+
+const findings = await engine.execute([
+  { path: 'src/index.ts', content: '...' }
+], { framework: 'nextjs' });
+
+// Get SARIF output for GitHub Security
+const sarif = engine.format(findings, 'sarif', { version: '2.1' });
+```
+
+## JSON Schema
+
+Validate your function definitions using the JSON Schema:
+
+```json
+{
+  "$schema": "https://json-function-engine.dev/schema/v1/functions.json",
+  "version": "1.0",
+  "rules": [...]
+}
+```
+
+Download the schema from [`schema/v1/functions.json`](schema/v1/functions.json) or use with VS Code:
+
+```json
+{
+  "$schema": "./node_modules/json-function-engine/schema/v1/functions.json"
+}
+```
+
+## Function Schema
+
+```json
+{
+  "version": "1.0",
+  "functions": [
+    {
+      "id": "UNIQUE_FUNCTION_ID",
+      "name": "Human readable name",
+      "description": "What this function detects or does",
+      "enabled": true,
+      "priority": 1,
+      "frameworks": ["react", "vue"],
+      "condition": { ... },
+      "action": { ... }
+    }
+  ]
+}
+```
+
+## Condition Types
+
+| Type | Description |
+|------|-------------|
+| `regex` | Pattern matching |
+| `comparison` | Value comparison (==, !=, >, <, contains, etc.) |
+| `exists` | Field presence check |
+| `composite` | AND/OR/NOT logic |
+
+### Regex Condition
+
+```json
+{
+  "type": "regex",
+  "pattern": "TODO",
+  "matchAll": false,
+  "fileExtensions": [".ts", ".tsx"]
+}
+```
+
+### Comparison Condition
+
+```json
+{
+  "type": "comparison",
+  "operator": "==",
+  "field": "framework",
+  "value": "nextjs"
+}
+```
+
+### Exists Condition
+
+```json
+{
+  "type": "exists",
+  "field": "framework"
+}
+```
+
+### Composite Condition
+
+```json
+{
+  "type": "composite",
+  "operator": "AND",
+  "conditions": [
+    { "type": "regex", "pattern": "..." },
+    { "type": "exists", "field": "..." }
+  ]
+}
+```
+
+## Action Types
+
+| Type | Description |
+|------|-------------|
+| `flag` | Create a finding |
+| `block` | Stop execution |
+| `transform` | Modify a value |
+| `notify` | Send an alert |
+
+### Flag Action
+
+```json
+{
+  "type": "flag",
+  "severity": "high",
+  "message": "Issue description"
+}
+```
+
+### Block Action
+
+```json
+{
+  "type": "block",
+  "message": "Stopping execution",
+  "severity": "critical"
+}
+```
+
+## Reporters
+
+| Format | Description |
+|--------|-------------|
+| `json` | JSON output |
+| `text` | Human-readable text |
+| `html` | HTML report |
+| `sarif` | SARIF for CI integration |
+
+## Extending the Engine
+
+### Custom Conditions
+
+```typescript
+const engine = new Engine();
+engine.getRegistry().registerCondition('fileExists', {
+  name: 'fileExists',
+  evaluate: async (config, context, file) => {
+    return {
+      matched: fs.existsSync(path.join(context.cwd, config.path))
+    };
+  }
+});
+```
+
+### Custom Actions
+
+```typescript
+engine.getRegistry().registerAction('slackNotify', {
+  name: 'slackNotify',
+  execute: async (config, context, matches, file) => {
+    await slack.webhook.send({ channel: config.channel, text: ... });
+    return { success: true, notified: true };
+  }
+});
+```
+
+### Custom Reporters
+
+```typescript
+engine.getRegistry().registerReporter('junit', {
+  name: 'JUnit',
+  format: (findings) => {
+    return `<?xml version="1.0"?>
+<testsuite tests="${findings.length}">
+${findings.map(f => `  <testcase name="${f.message}"/>`).join('\n')}
+</testsuite>`;
+  }
+});
+```
+
+## API
+
+### Engine
+
+```typescript
+const engine = new Engine(options?: EngineOptions)
+
+// Load functions from file paths
+const result = await engine.loadFunctions(paths: string | string[], options?: EngineOptions)
+// Returns: { loaded: number, errors: Array<{ path: string, error: string }> }
+
+// Add functions programmatically
+engine.addFunctions(functions: Rule[])
+
+// Get loaded function count
+const count = engine.getFunctionCount()
+
+// Inspect loaded functions
+const functions = engine.getFunctions()
+
+// Clear all functions
+engine.clear()
+
+// Execute functions against files
+const findings = await engine.execute(files: FileInput[], context?: ExecutionContext)
+
+// Format findings
+const output = engine.format(findings: Finding[], format: ReporterFormat, options?: FormatOptions)
+
+// Convenience method
+const output = await engine.scan(files, format?, context?, formatOptions?)
+```
+
+### Options
+
+```typescript
+interface EngineOptions {
+  include?: string[];      // Only include functions matching patterns
+  exclude?: string[];      // Exclude functions matching patterns
+  timeout?: number;        // Timeout per function in ms (default: 5000)
+  parallel?: boolean;      // Execute functions in parallel (default: true)
+  strict?: boolean;        // Throw on errors instead of collecting them
+}
+```
+
+## Execution Context
+
+The execution context provides additional information during function execution:
+
+```typescript
+interface ExecutionContext {
+  cwd: string;             // Current working directory
+  framework?: string;       // Target framework (e.g., 'nextjs', 'react')
+  signal?: AbortSignal;    // Cancellation signal
+  [key: string]: unknown;  // Custom context values
+}
+```
+
+### Framework Filtering
+
+Functions can be targeted to specific frameworks:
+
+```json
+{
+  "id": "NEXTJS_ONLY",
+  "frameworks": ["nextjs"],
+  "condition": { "type": "regex", "pattern": "getServerSideProps" },
+  "action": { "type": "flag", "severity": "info", "message": "Server-side rendering detected" }
+}
+```
+
+When executing, specify the framework to run only matching functions:
+
+```typescript
+const findings = await engine.execute(files, {
+  cwd: '.',
+  framework: 'nextjs'  // Only runs functions that target nextjs or have no framework restriction
+});
+```
+
+### Cancellation
+
+Support cancellation via AbortSignal:
+
+```typescript
+const controller = new AbortController();
+
+const findings = await engine.execute(files, {
+  cwd: '.',
+  signal: controller.signal
+});
+
+// Cancel after timeout
+setTimeout(() => controller.abort(), 5000);
+```
+
+### Metrics
+
+Access execution metrics:
+
+```typescript
+await engine.execute(files, { cwd: '.' });
+const metrics = engine.getMetrics().getMetrics();
+
+console.log({
+  functionsExecuted: metrics.functionsExecuted,
+  filesProcessed: metrics.filesProcessed,
+  findingsCount: metrics.findingsCount,
+  errorsCount: metrics.errorsCount,
+  findingsBySeverity: metrics.findingsBySeverity
+});
+```
+
+### Error Aggregation
+
+Get execution errors:
+
+```typescript
+await engine.execute(files, { cwd: '.' });
+const errors = engine.getErrors();
+
+for (const error of errors) {
+  console.log(`Function ${error.functionId} on ${error.file}: ${error.error}`);
+}
+```
+
+## Error Handling
+
+### Invalid JSON Files
+
+If a JSON file is malformed, `loadFunctions()` will log a warning and continue:
+
+```typescript
+const result = await engine.loadFunctions('./functions/*.json');
+// If some files fail:
+// result.loaded = 5    // successfully loaded
+// result.errors = [{ path: './functions/bad.json', error: 'Unexpected token }' }]
+```
+
+### Invalid Regex Patterns
+
+Invalid regex patterns in conditions are logged as warnings. The function is skipped:
+
+```json
+{
+  "condition": {
+    "type": "regex",
+    "pattern": "[invalid("
+  }
+}
+// Warning: Invalid regex pattern in function INVALID_FUNC
+```
+
+### Duplicate Function IDs
+
+When the same function ID is defined multiple times, later definitions override earlier ones. A warning is logged.
+
+### Timeout Handling
+
+Each function has a configurable timeout (default: 5 seconds). If execution exceeds the timeout, it's terminated and a warning is logged:
+
+```typescript
+const engine = new Engine({ timeout: 1000 }); // 1 second timeout
+const findings = await engine.execute(files);
+// If a function takes >1s, it's terminated and execution continues
+```
+
+## Performance
+
+- **Bundle size**: < 15KB gzipped
+- **Regex caching**: Compiled patterns are cached
+- **ReDoS protection**: Configurable timeout per function (default: 5s)
+- **Parallel execution**: Functions can run concurrently
+
+## Use Cases
+
+| Use Case | Description |
+|----------|-------------|
+| Code scanning | Scan source for secrets, TODOs, patterns |
+| Data validation | Validate API responses against functions |
+| Config processing | Evaluate conditions in config files |
+| Simple workflows | Conditional data pipelines |
+
+## Interested in Consolidating?
+
+If you're a maintainer considering rolling similar functionality into your core package, I'm happy to point users your direction instead. Open an issue to discuss.
+
+## License
+
+MIT

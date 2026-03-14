@@ -1,0 +1,96 @@
+# Attune ignore patterns
+# Similar to .gitignore
+
+# Test files
+**/__tests__/**
+**/*.test.ts
+**/*.spec.ts
+**/test/**
+**/tests/**
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Build outputs
+dist/
+build/
+out/
+
+# Node modules
+node_modules/
+
+# Dependencies
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation (source)
+docs/
+*.md
+
+# Attune local outputs (reports, cache, etc.)
+.attune/
+
+# False positives documented in .attune/jfe-false-positives.md
+# See that file for detailed explanations of why each rule is suppressed
+
+# Critical
+OWASP_A03_INJECTION
+DB_INJECTION_STRING
+SEC_DESERIALIZATION
+UPLOAD_NO_VIRUS_SCAN
+PAY_STORED_CARD
+
+# High
+SEC_RACE_CONDITION
+DB_N_PLUS_1
+SAAS_N_PLUS_1
+GRAPHQL_N_PLUS_ONE
+A11Y_PAGE_TITLE
+TS_NEVER_TYPE
+ARCH_CIRCULAR_DEP
+EMAIL_NO_VERIFY
+
+# Medium
+SEC_HOMEBREW_CRYPTO
+PERF_IMAGES
+UPLOAD_NO_CHUNKING
+MIGRATION_NO_SCHEMA
+MIGRATION_NO_TIMESTAMP
+QUEUE_NO_DEDUP
+QUEUE_NO_PRIORITY
+API_VERSION_DEPRECATED
+WS_NO_MESSAGE_TYPES
+
+# Low/Info - Code style preferences, not bugs
+COMP_CYCLOMATIC
+ERR_ASYNC_NO_AWAIT
+TS_IMPLICIT_ANY
+TS_INTERFACE_MERGE
+TS_OPTIONAL_PARAMS
+TS_TYPE_ASSERTION
+PERF_IMMUTABLE
+PERF_CACHING
+PERF_EXCESSIVE_LOGGING
+MAIN_MAGIC_NUMBERS
+MAIN_LONG_FILE
+MAIN_DATA_CLUMP
+CLEAN_NO_LOGGER
+ARCH_FEATURE_ENVY
+ARCH_VIOLATES_DEMETER
+ARCH_NO_ABSTRACTION
+SAAS_NO_CACHE
+CACHE_NO_TTL
+MON_NO_METRICS
+GQL_SUB_NO_VALIDATION

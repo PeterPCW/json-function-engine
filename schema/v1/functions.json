@@ -1,0 +1,225 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://json-function-engine.dev/schema/v1/functions.json",
+  "title": "JSON Function Engine Function Schema",
+  "description": "Schema for defining executable functions in JSON format for the json-function-engine library",
+  "type": "object",
+  "required": ["version", "functions"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version",
+      "const": "1.0"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional metadata about the function set",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "author": { "type": "string" }
+      }
+    },
+    "functions": {
+      "type": "array",
+      "description": "Array of function definitions",
+      "items": { "$ref": "#/definitions/Function" },
+      "minItems": 1
+    }
+  },
+  "definitions": {
+    "Function": {
+      "type": "object",
+      "required": ["id", "condition", "action"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the function",
+          "pattern": "^[A-Z0-9_]+$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable name"
+        },
+        "description": {
+          "type": "string",
+          "description": "What this function detects or does"
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "priority": {
+          "type": "integer",
+          "description": "Execution priority (higher runs first)",
+          "default": 0
+        },
+        "frameworks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Applicable frameworks (e.g., react, nextjs)"
+        },
+        "condition": { "$ref": "#/definitions/Condition" },
+        "action": { "$ref": "#/definitions/Action" }
+      }
+    },
+    "Condition": {
+      "oneOf": [
+        { "$ref": "#/definitions/RegexCondition" },
+        { "$ref": "#/definitions/ComparisonCondition" },
+        { "$ref": "#/definitions/ExistsCondition" },
+        { "$ref": "#/definitions/CompositeCondition" }
+      ]
+    },
+    "RegexCondition": {
+      "type": "object",
+      "required": ["type", "pattern"],
+      "properties": {
+        "type": { "const": "regex" },
+        "pattern": {
+          "type": "string",
+          "description": "Regular expression pattern"
+        },
+        "matchAll": {
+          "type": "boolean",
+          "default": false,
+          "description": "Match all occurrences or just first"
+        },
+        "caseInsensitive": {
+          "type": "boolean",
+          "default": false
+        },
+        "fileExtensions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "File extensions to apply this to"
+        }
+      }
+    },
+    "ComparisonCondition": {
+      "type": "object",
+      "required": ["type", "operator", "field", "value"],
+      "properties": {
+        "type": { "const": "comparison" },
+        "operator": {
+          "type": "string",
+          "enum": ["==", "!=", ">", "<", ">=", "<=", "contains", "startsWith", "endsWith"]
+        },
+        "field": {
+          "type": "string",
+          "description": "Field to compare"
+        },
+        "value": {
+          "description": "Value to compare against"
+        },
+        "fileExtensions": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "ExistsCondition": {
+      "type": "object",
+      "required": ["type", "field"],
+      "properties": {
+        "type": { "const": "exists" },
+        "field": {
+          "type": "string",
+          "description": "Field to check for existence"
+        },
+        "fileExtensions": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "CompositeCondition": {
+      "type": "object",
+      "required": ["type", "operator", "conditions"],
+      "properties": {
+        "type": { "const": "composite" },
+        "operator": {
+          "type": "string",
+          "enum": ["AND", "OR", "NOT"]
+        },
+        "conditions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Condition" }
+        },
+        "fileExtensions": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "Action": {
+      "oneOf": [
+        { "$ref": "#/definitions/FlagAction" },
+        { "$ref": "#/definitions/BlockAction" },
+        { "$ref": "#/definitions/TransformAction" },
+        { "$ref": "#/definitions/NotifyAction" }
+      ]
+    },
+    "FlagAction": {
+      "type": "object",
+      "required": ["type", "severity", "message"],
+      "properties": {
+        "type": { "const": "flag" },
+        "severity": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low", "info"]
+        },
+        "message": {
+          "type": "string",
+          "description": "Finding message"
+        }
+      }
+    },
+    "BlockAction": {
+      "type": "object",
+      "required": ["type", "message"],
+      "properties": {
+        "type": { "const": "block" },
+        "message": {
+          "type": "string",
+          "description": "Blocking message"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low", "info"],
+          "description": "Optional severity for the block"
+        }
+      }
+    },
+    "TransformAction": {
+      "type": "object",
+      "required": ["type", "field", "transformation"],
+      "properties": {
+        "type": { "const": "transform" },
+        "field": {
+          "type": "string",
+          "description": "Field to transform"
+        },
+        "transformation": {
+          "type": "string",
+          "description": "Transformation to apply"
+        }
+      }
+    },
+    "NotifyAction": {
+      "type": "object",
+      "required": ["type", "channel"],
+      "properties": {
+        "type": { "const": "notify" },
+        "channel": {
+          "type": "string",
+          "description": "Notification channel (e.g., slack, email)"
+        },
+        "template": {
+          "type": "string",
+          "description": "Optional message template"
+        }
+      }
+    }
+  }
+}

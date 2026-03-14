@@ -1,0 +1,72 @@
+{
+  "version": "1.0",
+  "functions": [
+    {
+      "id": "NO_TODO",
+      "name": "No TODO comments",
+      "description": "TODO comments should be resolved before shipping",
+      "enabled": true,
+      "priority": 1,
+      "condition": {
+        "type": "regex",
+        "pattern": "TODO",
+        "fileExtensions": [".ts", ".tsx", ".js", ".jsx"]
+      },
+      "action": {
+        "type": "flag",
+        "severity": "info",
+        "message": "TODO comment found"
+      }
+    },
+    {
+      "id": "NO_CONSOLE",
+      "name": "No console statements",
+      "description": "Console statements should be removed in production",
+      "enabled": true,
+      "priority": 2,
+      "condition": {
+        "type": "regex",
+        "pattern": "console\\.(log|debug|info)",
+        "fileExtensions": [".ts", ".tsx", ".js", ".jsx"]
+      },
+      "action": {
+        "type": "flag",
+        "severity": "low",
+        "message": "Console statement found"
+      }
+    },
+    {
+      "id": "NO_DEBUGGER",
+      "name": "No debugger statements",
+      "description": "Debug statements should be removed",
+      "enabled": true,
+      "priority": 1,
+      "condition": {
+        "type": "regex",
+        "pattern": "debugger"
+      },
+      "action": {
+        "type": "flag",
+        "severity": "high",
+        "message": "Debugger statement found"
+      }
+    },
+    {
+      "id": "NO_SECRETS",
+      "name": "No exposed secrets",
+      "description": "Hardcoded secrets should not be committed",
+      "enabled": true,
+      "priority": 1,
+      "condition": {
+        "type": "regex",
+        "pattern": "(api_key|password|secret|token)\\s*[:=]\\s*['\"][^'\"]+['\"]",
+        "fileExtensions": [".ts", ".tsx", ".js", ".jsx", ".env"]
+      },
+      "action": {
+        "type": "flag",
+        "severity": "critical",
+        "message": "Potential hardcoded secret found"
+      }
+    }
+  ]
+}
