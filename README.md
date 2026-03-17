@@ -177,12 +177,29 @@ Download the schema from [`schema/v1/functions.json`](schema/v1/functions.json) 
       "enabled": true,
       "priority": 1,
       "frameworks": ["react", "vue"],
+
+      // Optional metadata (preserved in findings)
+      "category": "security",
+      "recommendation": {
+        "title": "Fix this issue",
+        "description": "How to fix the issue",
+        "library": "React"
+      },
+      "catches": ["What the rule detects"],
+      "fix": ["How to fix it"],
+
       "condition": { ... },
       "action": { ... }
     }
   ]
 }
 ```
+
+**Metadata fields:**
+- `category` - Category for grouping (e.g., "security", "typescript")
+- `recommendation` - Actionable fix info with title, description, library
+- `catches` - Array of strings describing what the rule detects
+- `fix` - Array of strings with fix suggestions
 
 ## Condition Types
 
@@ -200,7 +217,28 @@ Download the schema from [`schema/v1/functions.json`](schema/v1/functions.json) 
   "type": "regex",
   "pattern": "TODO",
   "matchAll": false,
-  "fileExtensions": [".ts", ".tsx"]
+  "fileExtensions": [".ts", ".tsx"],
+  "excludePatterns": ["// TODO", "@test"],
+  "excludeRadius": 30
+}
+```
+
+- `excludePatterns` - Array of regex patterns to exclude matches near
+- `excludeRadius` - Characters around match to check (default: 50)
+
+### Multiple Conditions (OR)
+
+You can use `conditions` array instead of single `condition` - matches if ANY condition matches:
+
+```json
+{
+  "id": "TODO_OR_FIXME",
+  "conditions": [
+    { "type": "regex", "pattern": "TODO" },
+    { "type": "regex", "pattern": "FIXME" },
+    { "type": "regex", "pattern": "HACK" }
+  ],
+  "action": { "type": "flag", "severity": "info", "message": "Incomplete code marker found" }
 }
 ```
 
@@ -243,7 +281,7 @@ Download the schema from [`schema/v1/functions.json`](schema/v1/functions.json) 
 |------|-------------|
 | `flag` | Create a finding |
 | `block` | Stop execution |
-| `transform` | Modify a value |
+| `transform` | Modify matched text |
 | `notify` | Send an alert |
 
 ### Flag Action
@@ -265,6 +303,49 @@ Download the schema from [`schema/v1/functions.json`](schema/v1/functions.json) 
   "severity": "critical"
 }
 ```
+
+### Transform Action
+
+Transform matched text in file content:
+
+```json
+{
+  "type": "transform",
+  "field": "content",
+  "transformation": "replace",
+  "replacement": "TODO_COMPLETED"
+}
+```
+
+Valid transformations: `replace`, `remove`, `uppercase`, `lowercase`, `wrap`, `trim`
+
+For `wrap` transformation:
+
+```json
+{
+  "type": "transform",
+  "field": "content",
+  "transformation": "wrap",
+  "wrapWith": { "prefix": "<!-- ", "suffix": " -->" }
+}
+```
+
+### Notify Action
+
+Send notifications to different channels:
+
+```json
+{
+  "type": "notify",
+  "channel": "console",
+  "template": "[{{severity}}] {{functionId}}: {{message}}",
+  "threshold": "high"
+}
+```
+
+Valid channels: `console`, `callback`, `event`
+
+Template variables: `{{functionId}}`, `{{message}}`, `{{file}}`, `{{line}}`, `{{severity}}`, `{{matchedText}}`
 
 ## Reporters
 
@@ -358,7 +439,8 @@ interface EngineOptions {
   exclude?: string[];      // Exclude functions matching patterns
   timeout?: number;        // Timeout per function in ms (default: 5000)
   parallel?: boolean;      // Execute functions in parallel (default: true)
-  strict?: boolean;        // Throw on errors instead of collecting them
+  maxFileSize?: number;    // Skip files larger than this (default: 10MB)
+  maxLineLength?: number;  // Truncate lines longer than this (default: 10000)
 }
 ```
 

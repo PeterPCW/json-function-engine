@@ -15,6 +15,10 @@ export interface ExecutorDependencies {
 export interface ExecutorOptions {
   timeout?: number;
   parallel?: boolean;
+  /** Maximum file size in bytes. Files larger than this will be skipped. Default: 10MB */
+  maxFileSize?: number;
+  /** Maximum line length to process. Lines longer than this will be truncated. Default: 10000 */
+  maxLineLength?: number;
 }
 
 /**
@@ -46,7 +50,9 @@ export class Executor {
     this.metrics = dependencies.metrics ?? new DefaultMetricsCollector();
     this.options = {
       timeout: options.timeout ?? DEFAULT_TIMEOUT_MS,
-      parallel: options.parallel ?? true
+      parallel: options.parallel ?? true,
+      maxFileSize: options.maxFileSize ?? 10 * 1024 * 1024, // 10MB default
+      maxLineLength: options.maxLineLength ?? 10000
     };
     this.pipeline = new Pipeline();
     this.errors = [];
@@ -81,6 +87,38 @@ export class Executor {
   }
 
   /**
+   * Preprocess files: check size limits and truncate long lines
+   */
+  private preprocessFiles(files: FileInput[]): FileInput[] {
+    return files.map(file => {
+      const content = file.content;
+
+      // Check file size
+      const byteSize = new Blob([content]).size;
+      if (byteSize > this.options.maxFileSize) {
+        this.logger.warn(`File ${file.path} exceeds max size (${byteSize} bytes), skipping`);
+        this.metrics.increment('filesSkipped');
+        return { ...file, content: '' };
+      }
+
+      // Truncate long lines
+      const maxLineLength = this.options.maxLineLength;
+      if (maxLineLength && maxLineLength > 0) {
+        const lines = content.split('\n');
+        const truncatedLines = lines.map(line => {
+          if (line.length > maxLineLength) {
+            return line.substring(0, maxLineLength) + '... [truncated]';
+          }
+          return line;
+        });
+        return { ...file, content: truncatedLines.join('\n') };
+      }
+
+      return file;
+    });
+  }
+
+  /**
    * Execute functions against files
    */
   async execute(
@@ -106,8 +144,11 @@ export class Executor {
     const allFindings: Finding[] = [];
 
     try {
+      // Pre-process files: check size and truncate long lines
+      const processedFiles = this.preprocessFiles(pipelineData.files || files);
+
       // Pre-split lines for each file
-      const filesWithLines = (pipelineData.files || files).map(f => ({
+      const filesWithLines = processedFiles.map(f => ({
         ...f,
         lines: f.content.split('\n')
       }));
@@ -307,12 +348,31 @@ export class Executor {
       evaluateCondition: (config, ctx, f) => this.registry.evaluateCondition(config, ctx, f)
     };
 
-    // Evaluate condition
-    const conditionResult = await this.registry.evaluateCondition(
-      fn.condition as ConditionConfig,
-      contextWithCallback,
-      file
-    );
+    // Evaluate condition(s) - support both single condition and array of conditions
+    let conditionResult: import('../types/index.js').ConditionResult;
+
+    if (fn.conditions && Array.isArray(fn.conditions)) {
+      // Multiple conditions - OR them together (match if ANY matches)
+      const results = await Promise.all(
+        fn.conditions.map(c => this.registry.evaluateCondition(c, contextWithCallback, file))
+      );
+
+      // Combine matches from all conditions
+      const matched = results.some(r => r.matched);
+      const matches = results.flatMap(r => r.matches || []);
+
+      conditionResult = { matched, matches };
+    } else if (fn.condition) {
+      // Single condition (backward compatible)
+      conditionResult = await this.registry.evaluateCondition(
+        fn.condition as ConditionConfig,
+        contextWithCallback,
+        file
+      );
+    } else {
+      // No condition defined
+      conditionResult = { matched: false };
+    }
 
     // Execute action
     const actionResult = await this.registry.executeAction(

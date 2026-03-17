@@ -126,12 +126,22 @@ export function evaluateRegexCondition(
   _context: ExecutionContext,
   file: FileInput
 ): ConditionResult {
-  const { pattern, matchAll = false } = config;
+  const { pattern, matchAll = false, excludePatterns, excludeRadius = 50 } = config;
 
   // Validate and compile regex (includes ReDoS pattern validation)
   const regex = compileRegex(pattern);
   const lines = file.content.split('\n');
   const matches: Array<{ line: number; column: number; text: string }> = [];
+
+  // Pre-compile exclude patterns if provided
+  const excludeRegexes = excludePatterns?.map(p => {
+    try {
+      return new RegExp(p);
+    } catch {
+      // Invalid regex pattern - skip it
+      return null;
+    }
+  }).filter((r): r is RegExp => r !== null);
 
   const startTime = performance.now();
 
@@ -169,12 +179,37 @@ export function evaluateRegexCondition(
             );
           }
 
-          const matchIdx = regexMatch.index;
-          matches.push({
-            line: i + 1,
-            column: matchIdx + 1,
-            text: regexMatch[0]
-          });
+          const matchIdx = regexMatch.index ?? 0;
+
+          // Check exclude patterns
+          if (excludeRegexes && excludeRegexes.length > 0) {
+            const matchStart = Math.max(0, matchIdx - excludeRadius);
+            const matchEnd = Math.min(line.length, matchIdx + regexMatch[0].length + excludeRadius);
+            const contextSlice = line.substring(matchStart, matchEnd);
+
+            let shouldExclude = false;
+            for (const excludeRegex of excludeRegexes) {
+              if (excludeRegex.test(contextSlice)) {
+                shouldExclude = true;
+                break;
+              }
+            }
+
+            if (!shouldExclude) {
+              matches.push({
+                line: i + 1,
+                column: matchIdx + 1,
+                text: regexMatch[0]
+              });
+            }
+          } else {
+            matches.push({
+              line: i + 1,
+              column: matchIdx + 1,
+              text: regexMatch[0]
+            });
+          }
+
           if (regexMatch[0].length === 0) {
             // Prevent infinite loop on zero-length matches
             break;
@@ -182,11 +217,35 @@ export function evaluateRegexCondition(
         }
       } else {
         const matchIdx = match.index ?? 0;
-        matches.push({
-          line: i + 1,
-          column: matchIdx + 1,
-          text: match[0]
-        });
+
+        // Check exclude patterns
+        if (excludeRegexes && excludeRegexes.length > 0) {
+          const matchStart = Math.max(0, matchIdx - excludeRadius);
+          const matchEnd = Math.min(line.length, matchIdx + match[0].length + excludeRadius);
+          const contextSlice = line.substring(matchStart, matchEnd);
+
+          let shouldExclude = false;
+          for (const excludeRegex of excludeRegexes) {
+            if (excludeRegex.test(contextSlice)) {
+              shouldExclude = true;
+              break;
+            }
+          }
+
+          if (!shouldExclude) {
+            matches.push({
+              line: i + 1,
+              column: matchIdx + 1,
+              text: match[0]
+            });
+          }
+        } else {
+          matches.push({
+            line: i + 1,
+            column: matchIdx + 1,
+            text: match[0]
+          });
+        }
       }
     }
   }

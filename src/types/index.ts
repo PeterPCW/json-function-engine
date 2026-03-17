@@ -4,6 +4,7 @@ export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 
 export interface Finding {
   functionId: string;
+  category?: string;
   severity: Severity;
   message: string;
   location: {
@@ -33,7 +34,21 @@ export interface FunctionDefinition {
   enabled: boolean;
   priority: number;
   frameworks?: string[];
-  condition: Condition;
+
+  // Optional metadata fields for tools like attune
+  category?: string;
+  recommendation?: {
+    title: string;
+    description: string;
+    library?: string;
+  };
+  catches?: string[];
+  fix?: string[];
+
+  // Condition - support both single and multiple conditions
+  condition?: Condition;
+  conditions?: Condition[];
+
   action: Action;
 }
 
@@ -68,6 +83,9 @@ export interface RegexConditionConfig extends BaseConditionConfig {
   type: 'regex';
   pattern: string;
   matchAll?: boolean;
+  // Exclude matches near certain patterns (e.g., exclude matches near comments or in test files)
+  excludePatterns?: string[];
+  excludeRadius?: number;
 }
 
 export interface ComparisonConditionConfig extends BaseConditionConfig {
@@ -133,16 +151,30 @@ export interface BlockActionConfig extends BaseActionConfig {
   severity?: Severity;
 }
 
+export type TransformType = 'replace' | 'remove' | 'uppercase' | 'lowercase' | 'wrap' | 'trim';
+
 export interface TransformActionConfig extends BaseActionConfig {
   type: 'transform';
+  /** The field to transform (use 'content' for file content) */
   field: string;
-  transformation: string;
+  /** Type of transformation: replace, remove, uppercase, lowercase, wrap, trim */
+  transformation: TransformType;
+  /** Replacement text for 'replace' transformation (use $1, $2 for capture groups) */
+  replacement?: string;
+  /** Prefix/suffix for 'wrap' transformation */
+  wrapWith?: { prefix: string; suffix: string };
 }
 
 export interface NotifyActionConfig extends BaseActionConfig {
   type: 'notify';
+  /** Channel to notify: 'console', 'callback', or custom channel */
   channel: string;
+  /** Template for notification message. Variables: {{functionId}}, {{message}}, {{file}}, {{line}}, {{severity}} */
   template?: string;
+  /** Severity threshold for notification (only notify if severity >= threshold) */
+  threshold?: Severity;
+  /** Callback URL for 'webhook' channel (users should register custom handlers via Registry) */
+  url?: string;
 }
 
 export type ActionConfig = 
@@ -177,6 +209,10 @@ export interface EngineOptions {
   exclude?: string[];
   timeout?: number;
   parallel?: boolean;
+  /** Maximum file size in bytes. Files larger than this will be skipped. Default: 10MB */
+  maxFileSize?: number;
+  /** Maximum line length to process. Lines longer than this will be truncated. Default: 10000 */
+  maxLineLength?: number;
 }
 
 export interface FormatOptions {

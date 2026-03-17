@@ -53,7 +53,7 @@ describe('Schema Validation', () => {
 
   it('should reject function without condition', () => {
     const result = validate({ version: '1.0', functions: [fn({ condition: undefined })] });
-    expect(result).toContainEqual(expect.objectContaining({ path: '/functions/0/condition' }));
+    expect(result).toContainEqual(expect.objectContaining({ path: '/functions/0', message: expect.stringContaining('condition or conditions') }));
   });
 
   it('should reject function without action', () => {

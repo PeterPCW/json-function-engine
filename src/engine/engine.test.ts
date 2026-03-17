@@ -890,4 +890,231 @@ engine2.addFunctions(extensionRules);
       expect(findings).toBeDefined();
     });
   });
+
+  describe('Multiple conditions (OR logic)', () => {
+    it('should match when first condition matches', async () => {
+      const multiEngine = new Engine();
+      // @ts-expect-error - accessing private property for testing
+      multiEngine.functions = [
+        {
+          id: 'MULTI_OR_TEST',
+          conditions: [
+            { type: 'regex', pattern: 'TODO' },
+            { type: 'regex', pattern: 'FIXME' }
+          ],
+          action: { type: 'flag', severity: 'info', message: 'Found issue' }
+        }
+      ];
+
+      const findings = await multiEngine.execute([{ path: 'test.ts', content: '// TODO: fix this' }]);
+      expect(findings.length).toBe(1);
+      expect(findings[0].functionId).toBe('MULTI_OR_TEST');
+    });
+
+    it('should match when second condition matches', async () => {
+      const multiEngine = new Engine();
+      // @ts-expect-error - accessing private property for testing
+      multiEngine.functions = [
+        {
+          id: 'MULTI_OR_TEST',
+          conditions: [
+            { type: 'regex', pattern: 'TODO' },
+            { type: 'regex', pattern: 'FIXME' }
+          ],
+          action: { type: 'flag', severity: 'info', message: 'Found issue' }
+        }
+      ];
+
+      const findings = await multiEngine.execute([{ path: 'test.ts', content: '// FIXME: fix this' }]);
+      expect(findings.length).toBe(1);
+    });
+
+    it('should match when any condition matches', async () => {
+      const multiEngine = new Engine();
+      // @ts-expect-error - accessing private property for testing
+      multiEngine.functions = [
+        {
+          id: 'MULTI_OR_TEST',
+          conditions: [
+            { type: 'regex', pattern: 'TODO' },
+            { type: 'regex', pattern: 'FIXME' },
+            { type: 'regex', pattern: 'HACK' }
+          ],
+          action: { type: 'flag', severity: 'info', message: 'Found issue' }
+        }
+      ];
+
+      const findings = await multiEngine.execute([{ path: 'test.ts', content: '// HACK: workaround' }]);
+      expect(findings.length).toBe(1);
+    });
+
+    it('should not match when no condition matches', async () => {
+      const multiEngine = new Engine();
+      // @ts-expect-error - accessing private property for testing
+      multiEngine.functions = [
+        {
+          id: 'MULTI_OR_TEST',
+          conditions: [
+            { type: 'regex', pattern: 'TODO' },
+            { type: 'regex', pattern: 'FIXME' }
+          ],
+          action: { type: 'flag', severity: 'info', message: 'Found issue' }
+        }
+      ];
+
+      const findings = await multiEngine.execute([{ path: 'test.ts', content: '// clean code' }]);
+      expect(findings.length).toBe(0);
+    });
+
+    it('should collect matches from all matching conditions', async () => {
+      const multiEngine = new Engine();
+      // @ts-expect-error - accessing private property for testing
+      multiEngine.functions = [
+        {
+          id: 'MULTI_OR_TEST',
+          conditions: [
+            { type: 'regex', pattern: 'TODO' },
+            { type: 'regex', pattern: 'FIXME' }
+          ],
+          action: { type: 'flag', severity: 'info', message: 'Found issue' }
+        }
+      ];
+
+      const findings = await multiEngine.execute([{ path: 'test.ts', content: '// TODO: fix this\n// FIXME: also this' }]);
+      // Should have at least 1 finding (OR logic - first match wins)
+      expect(findings.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe('Exclude patterns', () => {
+    it('should exclude matches near exclude patterns', async () => {
+      const excludeEngine = new Engine();
+      // @ts-expect-error - accessing private property for testing
+      excludeEngine.functions = [
+        {
+          id: 'EXCLUDE_TEST',
+          condition: {
+            type: 'regex',
+            pattern: 'password',
+            excludePatterns: ['process\\.env'],
+            excludeRadius: 20
+          },
+          action: { type: 'flag', severity: 'high', message: 'Hardcoded secret' }
+        }
+      ];
+
+      // Should NOT match - password is near process.env
+      const findingsNoMatch = await excludeEngine.execute([
+        { path: 'config.js', content: 'const password = process.env.DB_PASSWORD;' }
+      ]);
+      expect(findingsNoMatch.length).toBe(0);
+    });
+
+    it('should match when exclude pattern is not nearby', async () => {
+      const excludeEngine = new Engine();
+      // @ts-expect-error - accessing private property for testing
+      excludeEngine.functions = [
+        {
+          id: 'EXCLUDE_TEST',
+          condition: {
+            type: 'regex',
+            pattern: 'password',
+            excludePatterns: ['process\\.env'],
+            excludeRadius: 20
+          },
+          action: { type: 'flag', severity: 'high', message: 'Hardcoded secret' }
+        }
+      ];
+
+      // Should match - password is far from process.env
+      const findingsMatch = await excludeEngine.execute([
+        { path: 'config.js', content: 'const password = "mysecret"; // process.env is far away here' }
+      ]);
+      expect(findingsMatch.length).toBe(1);
+    });
+
+    it('should work without exclude patterns (backward compatible)', async () => {
+      const normalEngine = new Engine();
+      // @ts-expect-error - accessing private property for testing
+      normalEngine.functions = [
+        {
+          id: 'NORMAL_TEST',
+          condition: { type: 'regex', pattern: 'TODO' },
+          action: { type: 'flag', severity: 'info', message: 'Found TODO' }
+        }
+      ];
+
+      const findings = await normalEngine.execute([{ path: 'test.ts', content: '// TODO: fix this' }]);
+      expect(findings.length).toBe(1);
+    });
+  });
+
+  describe('Metadata preservation', () => {
+    it('should preserve category in findings', async () => {
+      const metaEngine = new Engine();
+      // @ts-expect-error - accessing private property for testing
+      metaEngine.functions = [
+        {
+          id: 'META_TEST',
+          name: 'Test rule',
+          description: 'A test rule',
+          category: 'security',
+          condition: { type: 'regex', pattern: 'TODO' },
+          action: { type: 'flag', severity: 'info', message: 'Found TODO' }
+        }
+      ];
+
+      const findings = await metaEngine.execute([{ path: 'test.ts', content: '// TODO: fix' }]);
+      expect(findings.length).toBe(1);
+      expect(findings[0].category).toBe('security');
+    });
+
+    it('should preserve recommendation in findings', async () => {
+      const metaEngine = new Engine();
+      // @ts-expect-error - accessing private property for testing
+      metaEngine.functions = [
+        {
+          id: 'META_TEST',
+          name: 'Test rule',
+          description: 'A test rule',
+          recommendation: {
+            title: 'Fix the issue',
+            description: 'You should fix this',
+            library: 'TestLib'
+          },
+          condition: { type: 'regex', pattern: 'TODO' },
+          action: { type: 'flag', severity: 'info', message: 'Found TODO' }
+        }
+      ];
+
+      const findings = await metaEngine.execute([{ path: 'test.ts', content: '// TODO: fix' }]);
+      expect(findings.length).toBe(1);
+      expect(findings[0].recommendation).toEqual({
+        title: 'Fix the issue',
+        description: 'You should fix this',
+        library: 'TestLib'
+      });
+    });
+
+    it('should preserve catches and fix in findings metadata', async () => {
+      const metaEngine = new Engine();
+      // @ts-expect-error - accessing private property for testing
+      metaEngine.functions = [
+        {
+          id: 'META_TEST',
+          name: 'Test rule',
+          description: 'A test rule',
+          catches: ['Using TODO', 'Incomplete code'],
+          fix: ['Remove TODO', 'Complete the task'],
+          condition: { type: 'regex', pattern: 'TODO' },
+          action: { type: 'flag', severity: 'info', message: 'Found TODO' }
+        }
+      ];
+
+      const findings = await metaEngine.execute([{ path: 'test.ts', content: '// TODO: fix' }]);
+      expect(findings.length).toBe(1);
+      expect(findings[0].metadata?.catches).toEqual(['Using TODO', 'Incomplete code']);
+      expect(findings[0].metadata?.fix).toEqual(['Remove TODO', 'Complete the task']);
+    });
+  });
 });

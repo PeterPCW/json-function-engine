@@ -71,12 +71,26 @@ function validateFunction(fn: JSONValue, basePath: string): SchemaError[] {
     errors.push({ path: `${basePath}/id`, message: 'id must be uppercase letters, numbers, and underscores only' });
   }
 
-  // Required: condition
-  if (!f.condition) {
-    errors.push({ path: `${basePath}/condition`, message: 'condition is required' });
-  } else {
+  // Required: condition OR conditions (not both)
+  const hasCondition = 'condition' in f && f.condition !== undefined;
+  const hasConditions = 'conditions' in f && f.conditions !== undefined;
+
+  if (!hasCondition && !hasConditions) {
+    errors.push({ path: `${basePath}`, message: 'Either condition or conditions is required' });
+  } else if (hasCondition && hasConditions) {
+    errors.push({ path: `${basePath}`, message: 'Cannot use both condition and conditions - choose one' });
+  } else if (hasCondition) {
     const conditionErrors = validateCondition(f.condition, `${basePath}/condition`);
     errors.push(...conditionErrors);
+  } else if (hasConditions) {
+    if (!Array.isArray(f.conditions)) {
+      errors.push({ path: `${basePath}/conditions`, message: 'conditions must be an array' });
+    } else {
+      f.conditions.forEach((cond, index) => {
+        const condErrors = validateCondition(cond, `${basePath}/conditions/${index}`);
+        errors.push(...condErrors);
+      });
+    }
   }
 
   // Required: action
@@ -98,6 +112,39 @@ function validateFunction(fn: JSONValue, basePath: string): SchemaError[] {
 
   if (f.frameworks !== undefined && (!Array.isArray(f.frameworks) || !f.frameworks.every(item => typeof item === 'string'))) {
     errors.push({ path: `${basePath}/frameworks`, message: 'frameworks must be an array of strings' });
+  }
+
+  // Optional: category
+  if (f.category !== undefined && typeof f.category !== 'string') {
+    errors.push({ path: `${basePath}/category`, message: 'category must be a string' });
+  }
+
+  // Optional: recommendation
+  if (f.recommendation !== undefined) {
+    if (typeof f.recommendation !== 'object' || f.recommendation === null || Array.isArray(f.recommendation)) {
+      errors.push({ path: `${basePath}/recommendation`, message: 'recommendation must be an object' });
+    } else {
+      const rec = f.recommendation as JSONObject;
+      if (!rec.title || typeof rec.title !== 'string') {
+        errors.push({ path: `${basePath}/recommendation/title`, message: 'recommendation.title is required and must be a string' });
+      }
+      if (!rec.description || typeof rec.description !== 'string') {
+        errors.push({ path: `${basePath}/recommendation/description`, message: 'recommendation.description is required and must be a string' });
+      }
+      if (rec.library !== undefined && typeof rec.library !== 'string') {
+        errors.push({ path: `${basePath}/recommendation/library`, message: 'recommendation.library must be a string' });
+      }
+    }
+  }
+
+  // Optional: catches
+  if (f.catches !== undefined && (!Array.isArray(f.catches) || !f.catches.every(item => typeof item === 'string'))) {
+    errors.push({ path: `${basePath}/catches`, message: 'catches must be an array of strings' });
+  }
+
+  // Optional: fix
+  if (f.fix !== undefined && (!Array.isArray(f.fix) || !f.fix.every(item => typeof item === 'string'))) {
+    errors.push({ path: `${basePath}/fix`, message: 'fix must be an array of strings' });
   }
 
   return errors;
@@ -144,6 +191,28 @@ function validateCondition(condition: JSONValue, basePath: string): SchemaError[
       }
       if (c.fileExtensions !== undefined && (!Array.isArray(c.fileExtensions) || !c.fileExtensions.every(f => typeof f === 'string'))) {
         errors.push({ path: `${basePath}/fileExtensions`, message: 'fileExtensions must be an array of strings' });
+      }
+      // Optional: excludePatterns
+      if (c.excludePatterns !== undefined) {
+        if (!Array.isArray(c.excludePatterns)) {
+          errors.push({ path: `${basePath}/excludePatterns`, message: 'excludePatterns must be an array' });
+        } else {
+          c.excludePatterns.forEach((pattern, idx) => {
+            if (typeof pattern !== 'string') {
+              errors.push({ path: `${basePath}/excludePatterns/${idx}`, message: 'excludePatterns must contain only strings' });
+            } else {
+              try {
+                new RegExp(pattern);
+              } catch (err) {
+                errors.push({ path: `${basePath}/excludePatterns/${idx}`, message: `Invalid regex pattern: ${pattern}` });
+              }
+            }
+          });
+        }
+      }
+      // Optional: excludeRadius
+      if (c.excludeRadius !== undefined && typeof c.excludeRadius !== 'number') {
+        errors.push({ path: `${basePath}/excludeRadius`, message: 'excludeRadius must be a number' });
       }
       break;
 
@@ -246,12 +315,43 @@ function validateAction(action: JSONValue, basePath: string): SchemaError[] {
       }
       if (!a.transformation) {
         errors.push({ path: `${basePath}/transformation`, message: 'transform action requires transformation' });
+      } else {
+        const validTransformations = ['replace', 'remove', 'uppercase', 'lowercase', 'wrap', 'trim'];
+        if (!validTransformations.includes(a.transformation as string)) {
+          errors.push({ path: `${basePath}/transformation`, message: `transformation must be one of: ${validTransformations.join(', ')}` });
+        }
+      }
+      // Validate wrapWith if transformation is 'wrap'
+      if (a.transformation === 'wrap' && a.wrapWith) {
+        if (typeof a.wrapWith !== 'object' || a.wrapWith === null) {
+          errors.push({ path: `${basePath}/wrapWith`, message: 'wrapWith must be an object' });
+        } else {
+          const wrapWith = a.wrapWith as JSONObject;
+          if (!wrapWith.prefix || typeof wrapWith.prefix !== 'string') {
+            errors.push({ path: `${basePath}/wrapWith/prefix`, message: 'wrapWith.prefix is required and must be a string' });
+          }
+          if (!wrapWith.suffix || typeof wrapWith.suffix !== 'string') {
+            errors.push({ path: `${basePath}/wrapWith/suffix`, message: 'wrapWith.suffix is required and must be a string' });
+          }
+        }
       }
       break;
 
     case 'notify':
       if (!a.channel) {
         errors.push({ path: `${basePath}/channel`, message: 'notify action requires channel' });
+      } else {
+        const validChannels = ['console', 'callback', 'event', 'webhook'];
+        if (!validChannels.includes(a.channel as string)) {
+          // Custom channels are allowed, just warn
+        }
+      }
+      // Validate threshold if provided
+      if (a.threshold !== undefined) {
+        const validSeverities = ['critical', 'high', 'medium', 'low', 'info'];
+        if (!validSeverities.includes(a.threshold as string)) {
+          errors.push({ path: `${basePath}/threshold`, message: `threshold must be one of: ${validSeverities.join(', ')}` });
+        }
       }
       break;
   }

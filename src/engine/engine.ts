@@ -101,13 +101,20 @@ export class Engine {
     });
     this.executor = dependencies.executor ?? new Executor(
       { registry: this.registry, logger: this.logger },
-      { timeout: options.timeout, parallel: options.parallel }
+      {
+        timeout: options.timeout,
+        parallel: options.parallel,
+        maxFileSize: options.maxFileSize,
+        maxLineLength: options.maxLineLength
+      }
     );
     this.options = {
       include: options.include || [],
       exclude: options.exclude || [],
       timeout: options.timeout || DEFAULT_TIMEOUT_MS,
-      parallel: options.parallel ?? true
+      parallel: options.parallel ?? true,
+      maxFileSize: options.maxFileSize ?? 10 * 1024 * 1024, // 10MB default
+      maxLineLength: options.maxLineLength ?? 10000
     };
     this.errorPolicy = dependencies.errorPolicy ?? 'best-effort';
   }
@@ -270,8 +277,11 @@ export class Engine {
       // Use Executor to run the functions - best-effort is default in Executor
       const findings = await this.executor.execute(enabledFunctions, files, context);
 
+      // Enrich findings with function metadata (category, recommendation, catches, fix)
+      const enrichedFindings = this.enrichFindings(findings, enabledFunctions);
+
       // Deduplicate findings
-      const uniqueFindings = this.deduplicateFindings(findings);
+      const uniqueFindings = this.deduplicateFindings(enrichedFindings);
 
       // Sort by severity
       return uniqueFindings.sort((a, b) =>
@@ -294,17 +304,50 @@ export class Engine {
       if (!fn.id) {
         throw new ValidationError('Function definition is missing required field: id', 'id');
       }
-      if (!fn.condition) {
-        throw new ValidationError(`Function definition '${fn.id}' is missing required field: condition`, `functions.${fn.id}.condition`);
+      // Accept either condition OR conditions (not both)
+      const hasCondition = fn.condition !== undefined;
+      const hasConditions = fn.conditions !== undefined && fn.conditions.length > 0;
+
+      if (!hasCondition && !hasConditions) {
+        throw new ValidationError(
+          `Function definition '${fn.id}' is missing required field: condition or conditions`,
+          `functions.${fn.id}`
+        );
+      }
+      if (hasCondition && hasConditions) {
+        throw new ValidationError(
+          `Function definition '${fn.id}' cannot use both condition and conditions`,
+          `functions.${fn.id}`
+        );
+      }
+      if (hasCondition && fn.condition && !fn.condition.type) {
+        throw new ValidationError(
+          `Function definition '${fn.id}' condition is missing required field: type`,
+          `functions.${fn.id}.condition.type`
+        );
+      }
+      if (hasConditions && fn.conditions) {
+        for (let i = 0; i < fn.conditions.length; i++) {
+          const cond = fn.conditions[i];
+          if (!cond.type) {
+            throw new ValidationError(
+              `Function definition '${fn.id}' conditions[${i}] is missing required field: type`,
+              `functions.${fn.id}.conditions[${i}].type`
+            );
+          }
+        }
       }
       if (!fn.action) {
-        throw new ValidationError(`Function definition '${fn.id}' is missing required field: action`, `functions.${fn.id}.action`);
-      }
-      if (fn.condition && !fn.condition.type) {
-        throw new ValidationError(`Function definition '${fn.id}' condition is missing required field: type`, `functions.${fn.id}.condition.type`);
+        throw new ValidationError(
+          `Function definition '${fn.id}' is missing required field: action`,
+          `functions.${fn.id}.action`
+        );
       }
       if (fn.action && !fn.action.type) {
-        throw new ValidationError(`Function definition '${fn.id}' action is missing required field: type`, `functions.${fn.id}.action.type`);
+        throw new ValidationError(
+          `Function definition '${fn.id}' action is missing required field: type`,
+          `functions.${fn.id}.action.type`
+        );
       }
     }
   }
@@ -313,18 +356,72 @@ export class Engine {
    * Deduplicate findings based on functionId, file, line, and column
    */
   private deduplicateFindings(findings: Finding[]): Finding[] {
-    const seen = new Set<string>();
-    const unique: Finding[] = [];
+    // Use a Map for O(1) lookups with composite key
+    // Key: functionId|file|line|column -> Finding
+    // If duplicate found, keep the one with higher severity
+    const seen = new Map<string, Finding>();
+    const severityWeights = {
+      critical: 5,
+      high: 4,
+      medium: 3,
+      low: 2,
+      info: 1
+    };
 
     for (const finding of findings) {
-      const key = `${finding.functionId}:${finding.location.file}:${finding.location.line}:${finding.location.column ?? 0}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        unique.push(finding);
+      const key = `${finding.functionId}|${finding.location.file}|${finding.location.line}|${finding.location.column ?? 0}`;
+
+      const existing = seen.get(key);
+      if (!existing) {
+        seen.set(key, finding);
+      } else {
+        // Keep the finding with higher severity
+        const existingWeight = severityWeights[existing.severity] ?? 0;
+        const newWeight = severityWeights[finding.severity] ?? 0;
+        if (newWeight > existingWeight) {
+          seen.set(key, finding);
+        }
       }
     }
 
-    return unique;
+    return Array.from(seen.values());
+  }
+
+  /**
+   * Enrich findings with metadata from their source function definition
+   * This separates execution concerns (Executor) from output concerns (Engine)
+   */
+  private enrichFindings(findings: Finding[], functions: FunctionDefinition[]): Finding[] {
+    // Build a map of functionId -> function for quick lookup
+    const functionMap = new Map<string, FunctionDefinition>();
+    for (const fn of functions) {
+      functionMap.set(fn.id, fn);
+    }
+
+    // Enrich each finding with metadata from its source function
+    for (const finding of findings) {
+      const fn = functionMap.get(finding.functionId);
+      if (!fn) continue;
+
+      // Add category
+      if (fn.category) {
+        finding.category = fn.category;
+      }
+
+      // Add recommendation
+      if (fn.recommendation) {
+        finding.recommendation = fn.recommendation;
+      }
+
+      // Add catches and fix to metadata
+      if (fn.catches || fn.fix) {
+        if (!finding.metadata) finding.metadata = {};
+        if (fn.catches) finding.metadata.catches = fn.catches;
+        if (fn.fix) finding.metadata.fix = fn.fix;
+      }
+    }
+
+    return findings;
   }
 
   format(

@@ -1,6 +1,6 @@
 {
   "name": "json-function-engine",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Standalone JSON function engine for executing functions defined in JSON configuration",
   "type": "module",
   "main": "./dist/index.cjs",

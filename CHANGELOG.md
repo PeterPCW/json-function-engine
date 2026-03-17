@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-03-16
+
+### Added
+
+- **Multiple Conditions Support**
+  - Functions can now use `conditions` array (OR logic) instead of single `condition`
+  - Matches if ANY condition in the array matches
+  - Backward compatible - existing single `condition` still works
+
+- **Exclude Patterns for Regex**
+  - New `excludePatterns` option to filter out matches near certain patterns
+  - New `excludeRadius` option to control proximity (default: 50 chars)
+  - Useful for avoiding false positives in comments or test files
+
+- **Metadata Fields on Functions**
+  - `category` - e.g., "security", "typescript"
+  - `recommendation` - actionable fix info with title, description, library
+  - `catches` - what the rule detects
+  - `fix` - how to fix the issue
+  - All metadata preserved through to findings output
+
+- **Transform Action Improvements**
+  - Implemented actual transformations: `replace`, `remove`, `uppercase`, `lowercase`, `wrap`, `trim`
+  - `wrapWith` option for wrapping matched text with prefix/suffix
+
+- **Notify Action Improvements**
+  - Multiple channels: `console`, `callback`, `event`
+  - Template support with `{{functionId}}`, `{{message}}`, `{{file}}`, `{{line}}`, `{{severity}}`
+  - Severity threshold filtering
+
+- **Large File Support**
+  - `maxFileSize` option (default 10MB) - skips files exceeding size
+  - `maxLineLength` option (default 10,000) - truncates long lines before processing
+
+### Changed
+
+- Finding deduplication now keeps the finding with highest severity when duplicates found
+
+### Fixed
+
+- Schema validation now validates new fields: `conditions`, `excludePatterns`, `category`, `recommendation`, `catches`, `fix`
+- Finding enrichment moved from Executor to Engine for better separation of concerns
+
+---
+
 ## [0.8.0] - 2024-03-13
 
 ### Added
@@ -125,6 +170,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - flag and block actions
 - json and text reporters
 
+[0.9.0]: https://github.com/json-function-engine/core/releases/v0.9.0
 [0.8.0]: https://github.com/json-function-engine/core/releases/v0.8.0
 [1.0.0-alpha.1]: https://github.com/json-function-engine/core/releases/v1.0.0-alpha.1
 [1.0.0-alpha.0]: https://github.com/json-function-engine/core/releases/v1.0.0-alpha.0
