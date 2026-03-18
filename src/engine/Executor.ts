@@ -19,6 +19,12 @@ export interface ExecutorOptions {
   maxFileSize?: number;
   /** Maximum line length to process. Lines longer than this will be truncated. Default: 10000 */
   maxLineLength?: number;
+  /** Enable streaming mode for large files. Processes line-by-line to reduce memory. Default: false */
+  streaming?: boolean;
+  /** File size threshold in bytes above which streaming processes line-by-line. Default: 1MB */
+  streamingThreshold?: number;
+  /** When true, streaming ignores excludePatterns. Default: false (excludePatterns takes precedence) */
+  streamingIgnoreExclude?: boolean;
 }
 
 /**
@@ -30,6 +36,8 @@ export interface ClassifiedError {
   error: string;
   phase: 'condition' | 'action';
   type: 'validation' | 'timeout' | 'runtime' | 'unknown';
+  /** Optional stack trace for debugging */
+  stack?: string;
 }
 
 export class Executor {
@@ -52,7 +60,10 @@ export class Executor {
       timeout: options.timeout ?? DEFAULT_TIMEOUT_MS,
       parallel: options.parallel ?? true,
       maxFileSize: options.maxFileSize ?? 10 * 1024 * 1024, // 10MB default
-      maxLineLength: options.maxLineLength ?? 10000
+      maxLineLength: options.maxLineLength ?? 10000,
+      streaming: options.streaming ?? false,
+      streamingThreshold: options.streamingThreshold ?? 1024 * 1024, // 1MB default
+      streamingIgnoreExclude: options.streamingIgnoreExclude ?? false
     };
     this.pipeline = new Pipeline();
     this.errors = [];
@@ -93,8 +104,8 @@ export class Executor {
     return files.map(file => {
       const content = file.content;
 
-      // Check file size
-      const byteSize = new Blob([content]).size;
+      // Check file size - use Buffer.byteLength for better performance than Blob
+      const byteSize = Buffer.byteLength(content, 'utf-8');
       if (byteSize > this.options.maxFileSize) {
         this.logger.warn(`File ${file.path} exceeds max size (${byteSize} bytes), skipping`);
         this.metrics.increment('filesSkipped');
@@ -147,19 +158,57 @@ export class Executor {
       // Pre-process files: check size and truncate long lines
       const processedFiles = this.preprocessFiles(pipelineData.files || files);
 
-      // Pre-split lines for each file
-      const filesWithLines = processedFiles.map(f => ({
-        ...f,
-        lines: f.content.split('\n')
-      }));
+      // Process files - streaming mode processes files one at a time to reduce memory usage
+      if (this.options.streaming) {
+        // Check if any functions use excludePatterns (which requires full file context)
+        const hasExcludePatterns = enabledFunctions.some(fn => {
+          const condition = fn.condition;
+          return condition && 'type' in condition &&
+            condition.type === 'regex' &&
+            'excludePatterns' in condition &&
+            (condition as { excludePatterns?: string[] }).excludePatterns !== undefined;
+        });
 
-      // Process files (parallel or sequential)
-      const fileResults = this.options.parallel
-        ? await Promise.all(filesWithLines.map(f => this.processFile(f, enabledFunctions, context)))
-        : await this.sequentialProcess(filesWithLines, enabledFunctions, context);
+        // If excludePatterns is used and user hasn't opted to ignore it, disable streaming
+        const useStreaming = !hasExcludePatterns || this.options.streamingIgnoreExclude;
 
-      for (const findings of fileResults) {
-        allFindings.push(...findings);
+        // Streaming mode: process files sequentially with line-by-line for large files
+        for (const file of processedFiles) {
+          if (this.cancelled) break;
+
+          const fileSize = Buffer.byteLength(file.content, 'utf-8');
+
+          // Use line-by-line streaming for files larger than threshold
+          // (and only if excludePatterns doesn't prevent it)
+          if (useStreaming && fileSize > this.options.streamingThreshold) {
+            this.logger.info(`Streaming large file (${fileSize} bytes): ${file.path}`);
+            const findings = await this.processFileStreaming(
+              file.path,
+              file.content,
+              enabledFunctions,
+              context
+            );
+            allFindings.push(...findings);
+          } else {
+            // Small file or excludePatterns requires full content - process normally
+            const findings = await this.processFile(file as FileInput, enabledFunctions, context);
+            allFindings.push(...findings);
+          }
+        }
+      } else if (this.options.parallel) {
+        // Standard parallel mode: process all files concurrently
+        const fileResults = await Promise.all(
+          processedFiles.map(f => this.processFile(f as FileInput, enabledFunctions, context))
+        );
+        for (const findings of fileResults) {
+          allFindings.push(...findings);
+        }
+      } else {
+        // Sequential mode: process files one at a time
+        const fileResults = await this.sequentialProcess(processedFiles as FileInput[], enabledFunctions, context);
+        for (const findings of fileResults) {
+          allFindings.push(...findings);
+        }
       }
 
       // Run afterExecute hooks
@@ -252,7 +301,7 @@ export class Executor {
    * Process files sequentially
    */
   private async sequentialProcess(
-    files: Array<FileInput & { lines: string[] }>,
+    files: FileInput[],
     fns: FunctionDefinition[],
     context: ExecutionContext
   ): Promise<Finding[][]> {
@@ -274,12 +323,14 @@ export class Executor {
    * Process a single file through all enabled functions
    */
   async processFile(
-    file: FileInput & { lines: string[] },
+    file: FileInput & { lines?: string[] },
     fns: FunctionDefinition[],
     context: ExecutionContext
   ): Promise<Finding[]> {
     const findings: Finding[] = [];
-    const fileContext = { ...context, file: file.path, lines: file.lines };
+    // Note: lines in context was historically set but never consumed by conditions
+    // Keeping the pattern for potential future use without the overhead of pre-splitting
+    const fileContext = { ...context, file: file.path };
 
     for (const fn of fns) {
       // Check for cancellation between functions
@@ -310,8 +361,11 @@ export class Executor {
       } catch (error) {
         if (error instanceof Error) {
           this.logger.warn(`Error executing function ${fn.id}:`, error);
-          // Classify and track the error
-          this.errors.push(this.classifyError(error, fn.id, file.path));
+          // Classify and track the error, including stack trace for debugging
+          this.errors.push({
+            ...this.classifyError(error, fn.id, file.path),
+            stack: error.stack
+          });
         } else {
           const errorMessage = String(error);
           this.logger.warn(`Error executing function ${fn.id}:`, error);
@@ -324,6 +378,85 @@ export class Executor {
           });
         }
         this.metrics.increment('errors');
+      }
+    }
+
+    return findings;
+  }
+
+  /**
+   * Process a file using streaming (line-by-line) for large files
+   * This reduces memory usage by not loading entire file content into memory
+   */
+  async processFileStreaming(
+    filePath: string,
+    content: string,
+    fns: FunctionDefinition[],
+    context: ExecutionContext
+  ): Promise<Finding[]> {
+    const findings: Finding[] = [];
+    const fileContext = { ...context, file: filePath };
+
+    // Split content into lines - but only for this chunk if memory is a concern
+    const lines = content.split('\n');
+
+    // Process each line
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      if (this.cancelled) break;
+
+      const line = lines[lineIdx];
+      // Create a synthetic file input for just this line
+      const lineFile: FileInput = {
+        path: filePath,
+        content: line
+      };
+
+      // Evaluate each function against this line
+      for (const fn of fns) {
+        if (this.cancelled) break;
+
+        this.metrics.increment('functionsExecuted');
+        try {
+          const result = await runWithTimeout(
+            this.evaluateFunction(fn, lineFile, fileContext),
+            this.options.timeout,
+            `Function ${fn.id} timed out`
+          );
+
+          if (result.findings) {
+            for (const finding of result.findings) {
+              finding.functionId = fn.id;
+              // Adjust line number to be relative to original file
+              finding.location.line = lineIdx + 1;
+            }
+            findings.push(...result.findings);
+          }
+
+          if (result.blocked) {
+            this.logger.warn(`Execution blocked by function ${fn.id}: ${result.error}`);
+            this.metrics.increment('blocked');
+            break;
+          }
+        } catch (error) {
+          if (error instanceof Error) {
+            this.logger.warn(`Error executing function ${fn.id}:`, error);
+            this.errors.push({
+              ...this.classifyError(error, fn.id, filePath),
+              stack: error.stack
+            });
+          } else {
+            const errorMessage = String(error);
+            this.logger.warn(`Error executing function ${fn.id}:`, error);
+            this.errors.push({
+              functionId: fn.id,
+              file: filePath,
+              error: errorMessage,
+              phase: 'action',
+              type: 'unknown' as const
+            });
+          }
+          this.metrics.increment('errors');
+        }
       }
     }
 

@@ -4,6 +4,7 @@ export type { EngineDependencies } from './engine/engine.js';
 export { Registry } from './engine/registry.js';
 export { FileLoader } from './engine/FileLoader.js';
 export type { FileLoaderDependencies } from './engine/FileLoader.js';
+export { FindingEnricher } from './engine/FindingEnricher.js';
 export { Executor } from './engine/Executor.js';
 export type { ExecutorDependencies, ExecutorOptions } from './engine/Executor.js';
 export { Pipeline } from './engine/Pipeline.js';

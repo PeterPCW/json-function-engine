@@ -228,6 +228,44 @@ describe('Engine', () => {
       expect(result.success).toBe(true);
       expect(result.blocked).toBe(true);
     });
+
+    it('should execute transform action - replace', async () => {
+      const registry = engine.getRegistry();
+
+      const conditionResult = {
+        matched: true,
+        matches: [{ line: 1, column: 1, text: 'TODO' }]
+      };
+
+      const result = await registry.executeAction(
+        { type: 'transform', field: 'content', transformation: 'replace', replacement: 'DONE' },
+        { cwd: '.' },
+        conditionResult,
+        { path: 'test.ts', content: 'TODO: fix this' }
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.transformed).toBe('DONE: fix this');
+    });
+
+    it('should execute transform action - uppercase', async () => {
+      const registry = engine.getRegistry();
+
+      const conditionResult = {
+        matched: true,
+        matches: [{ line: 1, column: 1, text: 'todo' }]
+      };
+
+      const result = await registry.executeAction(
+        { type: 'transform', field: 'content', transformation: 'uppercase' },
+        { cwd: '.' },
+        conditionResult,
+        { path: 'test.ts', content: 'todo item' }
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.transformed).toBe('TODO item');
+    });
   });
 
   describe('format', () => {

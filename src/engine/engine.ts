@@ -11,6 +11,7 @@ import type {
 import { Registry } from './registry.js';
 import { FileLoader } from './FileLoader.js';
 import { Executor } from './Executor.js';
+import { FindingEnricher } from './FindingEnricher.js';
 import { getSeverityWeight } from '../utils/regex.js';
 import { DEFAULT_TIMEOUT_MS } from '../constants.js';
 import { createDefaultFileSystem, createDefaultLogger } from '../utils/factories.js';
@@ -74,6 +75,7 @@ export class Engine {
   private logger: Logger;
   private fileLoader: FileLoader;
   private executor: Executor;
+  private findingEnricher: FindingEnricher;
   private options: Required<EngineOptions>;
   private errorPolicy: ErrorPolicy;
 
@@ -105,7 +107,10 @@ export class Engine {
         timeout: options.timeout,
         parallel: options.parallel,
         maxFileSize: options.maxFileSize,
-        maxLineLength: options.maxLineLength
+        maxLineLength: options.maxLineLength,
+        streaming: options.streaming,
+        streamingThreshold: options.streamingThreshold,
+        streamingIgnoreExclude: options.streamingIgnoreExclude
       }
     );
     this.options = {
@@ -114,9 +119,14 @@ export class Engine {
       timeout: options.timeout || DEFAULT_TIMEOUT_MS,
       parallel: options.parallel ?? true,
       maxFileSize: options.maxFileSize ?? 10 * 1024 * 1024, // 10MB default
-      maxLineLength: options.maxLineLength ?? 10000
+      maxLineLength: options.maxLineLength ?? 10000,
+      skipValidation: options.skipValidation ?? false,
+      streaming: options.streaming ?? false,
+      streamingThreshold: options.streamingThreshold ?? 1024 * 1024, // 1MB default
+      streamingIgnoreExclude: options.streamingIgnoreExclude ?? false
     };
     this.errorPolicy = dependencies.errorPolicy ?? 'best-effort';
+    this.findingEnricher = new FindingEnricher();
   }
 
   /**
@@ -215,7 +225,8 @@ export class Engine {
     // Use FileLoader to load and parse files
     const result = await this.fileLoader.load(paths, {
       include: mergedOptions.include,
-      exclude: mergedOptions.exclude
+      exclude: mergedOptions.exclude,
+      skipValidation: mergedOptions.skipValidation
     });
 
     // Best-effort: collect errors but continue (strict mode removed)
@@ -278,7 +289,7 @@ export class Engine {
       const findings = await this.executor.execute(enabledFunctions, files, context);
 
       // Enrich findings with function metadata (category, recommendation, catches, fix)
-      const enrichedFindings = this.enrichFindings(findings, enabledFunctions);
+      const enrichedFindings = this.findingEnricher.enrich(findings, enabledFunctions);
 
       // Deduplicate findings
       const uniqueFindings = this.deduplicateFindings(enrichedFindings);
@@ -385,43 +396,6 @@ export class Engine {
     }
 
     return Array.from(seen.values());
-  }
-
-  /**
-   * Enrich findings with metadata from their source function definition
-   * This separates execution concerns (Executor) from output concerns (Engine)
-   */
-  private enrichFindings(findings: Finding[], functions: FunctionDefinition[]): Finding[] {
-    // Build a map of functionId -> function for quick lookup
-    const functionMap = new Map<string, FunctionDefinition>();
-    for (const fn of functions) {
-      functionMap.set(fn.id, fn);
-    }
-
-    // Enrich each finding with metadata from its source function
-    for (const finding of findings) {
-      const fn = functionMap.get(finding.functionId);
-      if (!fn) continue;
-
-      // Add category
-      if (fn.category) {
-        finding.category = fn.category;
-      }
-
-      // Add recommendation
-      if (fn.recommendation) {
-        finding.recommendation = fn.recommendation;
-      }
-
-      // Add catches and fix to metadata
-      if (fn.catches || fn.fix) {
-        if (!finding.metadata) finding.metadata = {};
-        if (fn.catches) finding.metadata.catches = fn.catches;
-        if (fn.fix) finding.metadata.fix = fn.fix;
-      }
-    }
-
-    return findings;
   }
 
   format(

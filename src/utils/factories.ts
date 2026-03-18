@@ -39,10 +39,11 @@ export interface StructuredLoggerOptions {
   prefix?: string;
   includeTimestamp?: boolean;
   includeLevel?: boolean;
+  correlationId?: string;
 }
 
 export function createStructuredLogger(options: StructuredLoggerOptions = {}): Logger {
-  const { prefix = '', includeTimestamp = true, includeLevel = true } = options;
+  const { prefix = '', includeTimestamp = true, includeLevel = true, correlationId } = options;
 
   const formatMessage = (level: string, message: string): string => {
     const parts: string[] = [];
@@ -51,6 +52,9 @@ export function createStructuredLogger(options: StructuredLoggerOptions = {}): L
     }
     if (includeLevel) {
       parts.push(level.toUpperCase());
+    }
+    if (correlationId) {
+      parts.push(`[${correlationId}]`);
     }
     if (prefix) {
       parts.push(prefix);

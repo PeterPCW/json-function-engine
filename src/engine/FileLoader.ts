@@ -76,9 +76,10 @@ export class FileLoader {
    */
   async load(
     paths: string | string[],
-    options: { include?: string[]; exclude?: string[] } = {}
+    options: { include?: string[]; exclude?: string[]; skipValidation?: boolean } = {}
   ): Promise<ExpandedResult> {
     const filePaths = Array.isArray(paths) ? paths : [paths];
+    const { skipValidation = false } = options;
 
     const loadedFunctions: FunctionDefinition[] = [];
     const errors: Array<{ path: string; error: string }> = [];
@@ -90,7 +91,7 @@ export class FileLoader {
         return Promise.all(
           expandedPaths.map(async (path) => {
             try {
-              return await this.loadFile(path);
+              return await this.loadFile(path, { skipValidation });
             } catch (error) {
               const errorMessage = error instanceof Error ? error.message : String(error);
               return { path, error: errorMessage, functions: [] };
@@ -126,8 +127,11 @@ export class FileLoader {
    * Load a single file and parse its functions
    */
   async loadFile(
-    path: string
+    path: string,
+    options: { skipValidation?: boolean } = {}
   ): Promise<{ path: string; error?: string; functions: FunctionDefinition[] }> {
+    const { skipValidation = false } = options;
+
     let content: string;
     try {
       content = await this.fileSystem.readFile(path, 'utf-8' as BufferEncoding);
@@ -148,17 +152,19 @@ export class FileLoader {
     const functions = (parsed.functions || []) as FunctionDefinition[];
     const functionSet = { version: parsed.version, functions: functions } as FunctionSet;
 
-    // Validate against schema
-    const validationErrors = validateFunctionSet(functionSet);
-    if (validationErrors.length > 0) {
-      const errorMessages = validationErrors.map(e => `${e.path}: ${e.message}`).join('; ');
-      return { path, error: `Schema validation failed: ${errorMessages}`, functions: [] };
-    }
+    // Validate against schema (unless skipped)
+    if (!skipValidation) {
+      const validationErrors = validateFunctionSet(functionSet);
+      if (validationErrors.length > 0) {
+        const errorMessages = validationErrors.map(e => `${e.path}: ${e.message}`).join('; ');
+        return { path, error: `Schema validation failed: ${errorMessages}`, functions: [] };
+      }
 
-    // Validate regex patterns
-    const regexErrors = validateRegexPatterns(functions);
-    if (regexErrors.length > 0) {
-      return { path, error: `Invalid regex patterns: ${regexErrors.join('; ')}`, functions: [] };
+      // Validate regex patterns
+      const regexErrors = validateRegexPatterns(functions);
+      if (regexErrors.length > 0) {
+        return { path, error: `Invalid regex patterns: ${regexErrors.join('; ')}`, functions: [] };
+      }
     }
 
     return { path, functions };

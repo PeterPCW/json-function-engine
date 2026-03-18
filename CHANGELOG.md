@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-03-17
+
+### Added
+
+- **Skip Validation Option**
+  - New `skipValidation` option for `loadFunctions()` and FileLoader
+  - Allows loading functions without JSON schema validation
+  - Useful for complex functions that don't conform to the standard schema
+
+- **Streaming Mode for Large Files**
+  - New `streaming` option to process large files line-by-line
+  - Reduces memory usage for large files
+  - `streamingThreshold` controls when to启用 streaming (default: 1MB)
+  - `streamingIgnoreExclude` allows opting out of excludePatterns protection
+
+- **Webhook Notify Channel**
+  - New `webhook` channel for HTTP notifications
+  - Configurable URL, method, headers, and timeout
+  - Authentication via custom headers (bring your own auth)
+
+- **Improved Error Handling**
+  - Stack traces included in classified errors
+  - Correlation ID support for request tracing
+
+- **Performance Improvements**
+  - Replaced Blob with Buffer.byteLength for file size calculation
+  - Eliminated duplicate line splitting
+  - Extracted FindingEnricher to separate class
+
+---
+
 ## [0.9.0] - 2026-03-16
 
 ### Added
@@ -170,6 +201,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - flag and block actions
 - json and text reporters
 
+[0.9.1]: https://github.com/json-function-engine/core/releases/v0.9.1
 [0.9.0]: https://github.com/json-function-engine/core/releases/v0.9.0
 [0.8.0]: https://github.com/json-function-engine/core/releases/v0.8.0
 [1.0.0-alpha.1]: https://github.com/json-function-engine/core/releases/v1.0.0-alpha.1

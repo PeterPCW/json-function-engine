@@ -330,6 +330,20 @@ For `wrap` transformation:
 }
 ```
 
+**Important:** Transform actions operate on file content **in-memory only**. The transformed content is returned in the action result but is not automatically written to disk. To persist changes, access the `transformed` field in the action result:
+
+```typescript
+const actionResult = await registry.executeAction(
+  { type: 'transform', field: 'content', transformation: 'replace', replacement: 'DONE' },
+  context,
+  conditionResult,
+  file
+);
+
+// Access transformed content
+console.log(actionResult.transformed); // The transformed file content
+```
+
 ### Notify Action
 
 Send notifications to different channels:
@@ -343,7 +357,40 @@ Send notifications to different channels:
 }
 ```
 
-Valid channels: `console`, `callback`, `event`
+Valid channels: `console`, `callback`, `event`, `webhook`
+
+For webhook channel:
+
+```json
+{
+  "type": "notify",
+  "channel": "webhook",
+  "url": "https://your-server.com/hook",
+  "method": "POST",
+  "timeout": 10000,
+  "headers": {
+    "Authorization": "Bearer YOUR_TOKEN"
+  }
+}
+```
+
+**Webhook Options:**
+- `url` (required): The webhook endpoint URL
+- `method`: HTTP method (GET, POST, PUT) - default: POST
+- `timeout`: Request timeout in ms - default: 10000
+- `headers`: Custom headers for authentication (see below)
+
+**Webhook Authentication:** Bring your own auth by setting headers. Your webhook server validates the credentials:
+
+```json
+{
+  "channel": "webhook",
+  "url": "https://your-server.com/webhook",
+  "headers": {
+    "Authorization": "Bearer your-secret-token"
+  }
+}
+```
 
 Template variables: `{{functionId}}`, `{{message}}`, `{{file}}`, `{{line}}`, `{{severity}}`, `{{matchedText}}`
 
@@ -441,8 +488,50 @@ interface EngineOptions {
   parallel?: boolean;      // Execute functions in parallel (default: true)
   maxFileSize?: number;    // Skip files larger than this (default: 10MB)
   maxLineLength?: number;  // Truncate lines longer than this (default: 10000)
+  skipValidation?: boolean; // Skip JSON schema validation (default: false)
+  streaming?: boolean;     // Enable streaming for large files (default: false)
+  streamingThreshold?: number; // File size threshold for streaming in bytes (default: 1MB)
+  streamingIgnoreExclude?: boolean; // Use streaming even with excludePatterns (default: false)
 }
 ```
+
+### Streaming Mode
+
+For large files, streaming mode processes content line-by-line to reduce memory usage:
+
+```typescript
+const engine = new Engine({
+  streaming: true,
+  streamingThreshold: 1024 * 1024, // Files above 1MB use streaming
+  streamingIgnoreExclude: false    // Default: disable streaming when excludePatterns is used
+});
+```
+
+**Note:** Streaming is automatically disabled when functions use `excludePatterns` (which need adjacent line context). Set `streamingIgnoreExclude: true` to force streaming if you don't use excludePatterns:
+
+```typescript
+// Force streaming even with excludePatterns (you understand exclude won't work)
+const engine = new Engine({
+  streaming: true,
+  streamingIgnoreExclude: true
+});
+```
+
+### Skip Validation
+
+By default, function files are validated against the JSON schema. You can skip validation to allow complex functions that don't conform to the standard schema:
+
+```typescript
+// Load functions without schema validation
+const result = await engine.loadFunctions('./functions/*.json', {
+  skipValidation: true
+});
+```
+
+This is useful when:
+- Using custom properties not in the schema
+- Gradually migrating functions
+- Using the engine in non-standard ways
 
 ## Execution Context
 

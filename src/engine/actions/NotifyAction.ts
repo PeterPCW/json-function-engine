@@ -92,7 +92,7 @@ export const notifyAction: ActionDefinition = {
         }
         break;
 
-      case 'callback':
+      case 'callback': {
         // Call a callback function if provided in context
         const callback = context.notifyCallback as ((msg: string) => void) | undefined;
         if (callback && typeof callback === 'function') {
@@ -102,8 +102,9 @@ export const notifyAction: ActionDefinition = {
           console.warn(`Notify action: callback channel requested but no callback configured. Message: ${message}`);
         }
         break;
+      }
 
-      case 'event':
+      case 'event': {
         // Emit an event if EventEmitter is available in context
         const emitter = context.eventEmitter as {
           emit: (event: string, data: unknown) => boolean;
@@ -119,8 +120,80 @@ export const notifyAction: ActionDefinition = {
           console.warn(`Notify action: event channel requested but no EventEmitter configured. Message: ${message}`);
         }
         break;
+      }
 
-      default:
+      case 'webhook': {
+        // Send notification to a webhook URL
+        const webhookUrl = cfg.url;
+        if (!webhookUrl) {
+          console.warn(`Notify action: webhook channel requires a 'url' parameter`);
+          return {
+            success: false,
+            notified: false,
+            error: 'Webhook channel requires a URL'
+          };
+        }
+
+        try {
+          // Prepare payload
+          const payload = {
+            message,
+            functionId: templateContext.functionId,
+            file: file.path,
+            line: templateContext.line,
+            severity,
+            matchedText: templateContext.matchedText,
+            timestamp: new Date().toISOString()
+          };
+
+          // Use global fetch with timeout (available in Node 18+)
+          const timeout = cfg.timeout || 10000; // Default 10 second timeout
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+          let response: Response;
+          try {
+            response = await fetch(webhookUrl, {
+              method: cfg.method || 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...cfg.headers
+              },
+              body: JSON.stringify(payload),
+              signal: controller.signal
+            });
+          } catch (err) {
+            clearTimeout(timeoutId);
+            if (err instanceof Error && err.name === 'AbortError') {
+              console.warn(`Notify action: webhook timed out after ${timeout}ms`);
+              return {
+                success: false,
+                notified: false,
+                error: `Webhook timed out after ${timeout}ms`
+              };
+            }
+            throw err;
+          }
+          clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            console.warn(`Notify action: webhook returned status ${response.status}`);
+            return {
+              success: false,
+              notified: false,
+              error: `Webhook returned status ${response.status}`
+            };
+          }
+
+          console.log(`Notify action: webhook sent successfully to ${webhookUrl}`);
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          console.warn(`Notify action: webhook failed: ${errorMessage}`);
+        }
+        break;
+      }
+
+      default: {
         // For custom channels, users should register handlers via Registry
         // For now, log a warning about unknown channel
         console.warn(`Notify action: unknown channel '${channel}'. Custom channels can be registered via Registry.`);
@@ -129,6 +202,7 @@ export const notifyAction: ActionDefinition = {
           notified: false,
           error: `Unknown notification channel: ${channel}`
         };
+      }
     }
 
     return {

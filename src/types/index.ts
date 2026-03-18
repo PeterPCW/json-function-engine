@@ -167,14 +167,20 @@ export interface TransformActionConfig extends BaseActionConfig {
 
 export interface NotifyActionConfig extends BaseActionConfig {
   type: 'notify';
-  /** Channel to notify: 'console', 'callback', or custom channel */
+  /** Channel to notify: 'console', 'callback', 'event', 'webhook', or custom channel */
   channel: string;
   /** Template for notification message. Variables: {{functionId}}, {{message}}, {{file}}, {{line}}, {{severity}} */
   template?: string;
   /** Severity threshold for notification (only notify if severity >= threshold) */
   threshold?: Severity;
-  /** Callback URL for 'webhook' channel (users should register custom handlers via Registry) */
+  /** URL for 'webhook' channel */
   url?: string;
+  /** HTTP method for 'webhook' channel (default: POST) */
+  method?: 'GET' | 'POST' | 'PUT';
+  /** Custom headers for 'webhook' channel */
+  headers?: Record<string, string>;
+  /** Timeout in milliseconds for 'webhook' channel (default: 10000) */
+  timeout?: number;
 }
 
 export type ActionConfig = 
@@ -188,6 +194,14 @@ export interface FileInput {
   content: string;
 }
 
+/**
+ * FileInput with streaming support - used internally for large file processing
+ */
+export interface StreamingFileInput extends FileInput {
+  /** If true, content should be processed line-by-line */
+  streamLines?: boolean;
+}
+
 // Registry interface for type reference (avoids circular deps)
 export interface IRegistry {
   evaluateCondition(config: ConditionConfig, context: ExecutionContext, file: FileInput): Promise<ConditionResult>;
@@ -199,6 +213,8 @@ export interface ExecutionContext {
   framework?: string;
   /** AbortSignal for cancellation */
   signal?: AbortSignal;
+  /** Optional correlation ID for tracing requests across logs */
+  correlationId?: string;
   /** Callback for evaluating nested conditions (used by composite conditions) */
   evaluateCondition?: (config: ConditionConfig, context: ExecutionContext, file: FileInput) => Promise<ConditionResult>;
   [key: string]: unknown;
@@ -213,6 +229,14 @@ export interface EngineOptions {
   maxFileSize?: number;
   /** Maximum line length to process. Lines longer than this will be truncated. Default: 10000 */
   maxLineLength?: number;
+  /** Skip JSON schema validation when loading functions. Default: false */
+  skipValidation?: boolean;
+  /** Enable streaming mode for large files. Processes files line-by-line to reduce memory usage. Default: false */
+  streaming?: boolean;
+  /** File size threshold in bytes above which streaming mode processes line-by-line. Default: 1MB */
+  streamingThreshold?: number;
+  /** When true, streaming will be used even if functions use excludePatterns. When false (default), excludePatterns takes precedence over streaming. */
+  streamingIgnoreExclude?: boolean;
 }
 
 export interface FormatOptions {
