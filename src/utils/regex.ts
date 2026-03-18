@@ -1,5 +1,5 @@
 import type { RegexConditionConfig, ConditionResult, FileInput, ExecutionContext } from '../types/index.js';
-import { DEFAULT_TIMEOUT_MS, MAX_REGEX_CACHE_SIZE } from '../constants.js';
+import { MAX_REGEX_CACHE_SIZE } from '../constants.js';
 import { LRUCache } from './cache.js';
 
 const regexCache = new LRUCache<string, RegExp>(MAX_REGEX_CACHE_SIZE);
@@ -25,9 +25,23 @@ const REDOS_PATTERNS = [
 
 /**
  * Validate regex pattern for complexity and known ReDoS patterns
+ * @param pattern The regex pattern to validate
+ * @param skipValidation If true, skip ReDoS pattern validation but still check for syntax errors
  * @throws Error if pattern is invalid or potentially dangerous
  */
-export function validateRegexPattern(pattern: string): void {
+export function validateRegexPattern(pattern: string, skipValidation: boolean = false): void {
+  // Always check syntax by attempting to compile
+  try {
+    new RegExp(pattern);
+  } catch (error) {
+    throw new Error(`Invalid regex pattern: ${pattern}`);
+  }
+
+  // Skip complexity checks if validation is disabled
+  if (skipValidation) {
+    return;
+  }
+
   // Check length
   if (pattern.length > MAX_PATTERN_LENGTH) {
     throw new Error(
@@ -91,20 +105,28 @@ export function getRegexCacheSize(): number {
 
 /**
  * Compile a regex pattern with validation
+ * @param pattern The regex pattern to compile
+ * @param skipValidation If true, skip ReDoS pattern validation
  * @throws Error if pattern is invalid or potentially dangerous
  */
-export function compileRegex(pattern: string, _timeoutMs: number = DEFAULT_TIMEOUT_MS): RegExp {
+export function compileRegex(pattern: string, skipValidation: boolean = false): RegExp {
   // Validate pattern first
-  validateRegexPattern(pattern);
+  validateRegexPattern(pattern, skipValidation);
 
-  const cached = regexCache.get(pattern);
-  if (cached) {
-    return cached;
+  // Don't use cache when validation is skipped (patterns may be risky)
+  if (!skipValidation) {
+    const cached = regexCache.get(pattern);
+    if (cached) {
+      return cached;
+    }
   }
 
   try {
     const regex = new RegExp(pattern);
-    regexCache.set(pattern, regex);
+    // Only cache when validation is enabled
+    if (!skipValidation) {
+      regexCache.set(pattern, regex);
+    }
     return regex;
   } catch (error) {
     throw new Error(`Invalid regex pattern: ${pattern}`);
@@ -123,13 +145,16 @@ const MAX_REGEX_TIME_PER_LINE_MS = 100;
  */
 export function evaluateRegexCondition(
   config: RegexConditionConfig,
-  _context: ExecutionContext,
+  context: ExecutionContext,
   file: FileInput
 ): ConditionResult {
   const { pattern, matchAll = false, excludePatterns, excludeRadius = 50 } = config;
 
+  // Check if regex validation should be skipped (from context)
+  const skipValidation = context.skipRegexValidation ?? false;
+
   // Validate and compile regex (includes ReDoS pattern validation)
-  const regex = compileRegex(pattern);
+  const regex = compileRegex(pattern, skipValidation);
   const lines = file.content.split('\n');
   const matches: Array<{ line: number; column: number; text: string }> = [];
 

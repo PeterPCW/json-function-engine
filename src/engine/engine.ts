@@ -14,7 +14,7 @@ import { Executor } from './Executor.js';
 import { FindingEnricher } from './FindingEnricher.js';
 import { getSeverityWeight } from '../utils/regex.js';
 import { DEFAULT_TIMEOUT_MS } from '../constants.js';
-import { createDefaultFileSystem, createDefaultLogger } from '../utils/factories.js';
+import { createDefaultFileSystem, createDefaultLogger, createSilentLogger } from '../utils/factories.js';
 import { type MetricsCollector } from '../utils/metrics.js';
 import { ValidationError, ConfigurationError } from '../utils/errors.js';
 
@@ -96,7 +96,8 @@ export class Engine {
 
     this.registry = dependencies.registry ?? new Registry();
     this.fileSystem = dependencies.fileSystem ?? createDefaultFileSystem();
-    this.logger = dependencies.logger ?? createDefaultLogger();
+    // Use silent logger if silent option is set
+    this.logger = dependencies.logger ?? (options.silent ? createSilentLogger() : createDefaultLogger());
     this.fileLoader = dependencies.fileLoader ?? new FileLoader({
       fileSystem: this.fileSystem,
       logger: this.logger
@@ -110,7 +111,8 @@ export class Engine {
         maxLineLength: options.maxLineLength,
         streaming: options.streaming,
         streamingThreshold: options.streamingThreshold,
-        streamingIgnoreExclude: options.streamingIgnoreExclude
+        streamingIgnoreExclude: options.streamingIgnoreExclude,
+        skipRegexValidation: options.skipRegexValidation
       }
     );
     this.options = {
@@ -121,9 +123,11 @@ export class Engine {
       maxFileSize: options.maxFileSize ?? 10 * 1024 * 1024, // 10MB default
       maxLineLength: options.maxLineLength ?? 10000,
       skipValidation: options.skipValidation ?? false,
+      skipRegexValidation: options.skipRegexValidation ?? false,
       streaming: options.streaming ?? false,
       streamingThreshold: options.streamingThreshold ?? 1024 * 1024, // 1MB default
-      streamingIgnoreExclude: options.streamingIgnoreExclude ?? false
+      streamingIgnoreExclude: options.streamingIgnoreExclude ?? false,
+      silent: options.silent ?? false
     };
     this.errorPolicy = dependencies.errorPolicy ?? 'best-effort';
     this.findingEnricher = new FindingEnricher();

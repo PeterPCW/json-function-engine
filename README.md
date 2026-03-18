@@ -488,7 +488,9 @@ interface EngineOptions {
   parallel?: boolean;      // Execute functions in parallel (default: true)
   maxFileSize?: number;    // Skip files larger than this (default: 10MB)
   maxLineLength?: number;  // Truncate lines longer than this (default: 10000)
-  skipValidation?: boolean; // Skip JSON schema validation (default: false)
+  skipValidation?: boolean; // Skip JSON schema validation at load time (default: false)
+  skipRegexValidation?: boolean; // Skip ReDoS validation at execute time (default: false)
+  silent?: boolean;        // Suppress console logging (default: false)
   streaming?: boolean;     // Enable streaming for large files (default: false)
   streamingThreshold?: number; // File size threshold for streaming in bytes (default: 1MB)
   streamingIgnoreExclude?: boolean; // Use streaming even with excludePatterns (default: false)
@@ -533,6 +535,37 @@ This is useful when:
 - Gradually migrating functions
 - Using the engine in non-standard ways
 
+### Skip Regex Validation
+
+By default, regex patterns are validated at execute time for ReDoS protection (complexity limits, known dangerous patterns). You can skip this validation for complex patterns that trigger false positives:
+
+```typescript
+// At engine initialization
+const engine = new Engine({
+  skipRegexValidation: true
+});
+
+// Or at execution time (overrides engine setting)
+const findings = await engine.execute(files, {
+  cwd: '.',
+  skipRegexValidation: true
+});
+```
+
+**Note:** When validation is skipped, the regex cache is bypassed for safety.
+
+### Silent Mode
+
+Suppress all console logging for CLI tools:
+
+```typescript
+const engine = new Engine({
+  silent: true
+});
+```
+
+This prevents the engine from logging warnings/errors in best-effort mode, which is useful for programmatic usage or when you handle errors programmatically via `getErrors()`.
+
 ## Execution Context
 
 The execution context provides additional information during function execution:
@@ -540,9 +573,11 @@ The execution context provides additional information during function execution:
 ```typescript
 interface ExecutionContext {
   cwd: string;             // Current working directory
-  framework?: string;       // Target framework (e.g., 'nextjs', 'react')
-  signal?: AbortSignal;    // Cancellation signal
-  [key: string]: unknown;  // Custom context values
+  framework?: string;      // Target framework (e.g., 'nextjs', 'react')
+  signal?: AbortSignal;   // Cancellation signal
+  correlationId?: string;  // Optional ID for request tracing
+  skipRegexValidation?: boolean; // Skip ReDoS validation for this run
+  [key: string]: unknown; // Custom context values
 }
 ```
 

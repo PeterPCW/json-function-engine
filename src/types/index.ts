@@ -215,6 +215,8 @@ export interface ExecutionContext {
   signal?: AbortSignal;
   /** Optional correlation ID for tracing requests across logs */
   correlationId?: string;
+  /** Skip regex validation at execute time (for complex patterns that trigger ReDoS protection). Default: false */
+  skipRegexValidation?: boolean;
   /** Callback for evaluating nested conditions (used by composite conditions) */
   evaluateCondition?: (config: ConditionConfig, context: ExecutionContext, file: FileInput) => Promise<ConditionResult>;
   [key: string]: unknown;
@@ -231,12 +233,16 @@ export interface EngineOptions {
   maxLineLength?: number;
   /** Skip JSON schema validation when loading functions. Default: false */
   skipValidation?: boolean;
+  /** Skip regex validation at execute time (for complex patterns that trigger ReDoS protection). Default: false */
+  skipRegexValidation?: boolean;
   /** Enable streaming mode for large files. Processes files line-by-line to reduce memory usage. Default: false */
   streaming?: boolean;
   /** File size threshold in bytes above which streaming mode processes line-by-line. Default: 1MB */
   streamingThreshold?: number;
   /** When true, streaming will be used even if functions use excludePatterns. When false (default), excludePatterns takes precedence over streaming. */
   streamingIgnoreExclude?: boolean;
+  /** Suppress all console logging. Default: false */
+  silent?: boolean;
 }
 
 export interface FormatOptions {

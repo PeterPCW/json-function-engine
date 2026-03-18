@@ -1,0 +1,247 @@
+{
+  "version": "1.0",
+  "functions": [
+    {
+      "id": "API_VERSION_HEADER",
+      "name": "Using header versioning only",
+      "description": "Header versioning is harder to discover and test.",
+      "enabled": true,
+      "priority": 1,
+      "frameworks": [],
+      "category": "api-versioning",
+      "recommendation": {
+        "title": "Prefer URL versioning",
+        "description": "Header versioning is harder to discover and test.",
+        "library": "API versioning"
+      },
+      "catches": [
+        "Header-based versioning only",
+        "Harder to discover and test",
+        "Less visible to consumers"
+      ],
+      "fix": [
+        "Use URL versioning (/v1/)",
+        "Use header as secondary",
+        "Document versioning approach"
+      ],
+      "condition": {
+        "type": "regex",
+        "pattern": "Accept.*version|X-API-Version",
+        "fileExtensions": [".ts", ".js"]
+      },
+      "action": {
+        "type": "flag",
+        "severity": "low",
+        "message": "Header versioning found"
+      }
+    },
+    {
+      "id": "DB_N_PLUS_1",
+      "name": "N+1 Query Problem",
+      "description": "Use eager loading or JOINs to avoid N+1 queries.",
+      "enabled": true,
+      "priority": 1,
+      "frameworks": [],
+      "category": "database",
+      "recommendation": {
+        "title": "Fix N+1 query problem",
+        "description": "Use eager loading or JOINs to avoid N+1 queries.",
+        "library": "Prisma, Drizzle"
+      },
+      "catches": [
+        "N+1 query problem",
+        "Multiple database calls in loop",
+        "Performance issues"
+      ],
+      "fix": [
+        "Use eager loading",
+        "Use JOINs",
+        "Batch queries"
+      ],
+      "conditions": [
+        {
+          "type": "regex",
+          "pattern": "for\\s*\\(\\s*(const|let|var)\\s+\\w+\\s+of[^)]*\\)(?:[^{]*\\{)?[^}]*(?:query|fetch|select|insert|update|delete|find|getBy|get\\(|save\\(|create\\(|db\\.|database|repository|DAO|model\\.)"
+        },
+        {
+          "type": "regex",
+          "pattern": "\\.map\\s*\\([^)]*\\)\\s*\\.then|\\.forEach\\s*\\([^)]*\\)\\s*\\{[^}]*(?:query|fetch|select|insert|update|delete|db\\.)"
+        }
+      ],
+      "action": {
+        "type": "flag",
+        "severity": "high",
+        "message": "Potential N+1 query - loop with database call"
+      }
+    },
+    {
+      "id": "TS_MISSING_RETURN_TYPE",
+      "name": "Exported function missing return type",
+      "description": "Exported functions should have explicit return types for better API documentation and type safety.",
+      "enabled": true,
+      "priority": 1,
+      "frameworks": [],
+      "category": "typescript",
+      "recommendation": {
+        "title": "Add return types to exported functions",
+        "description": "Exported functions should have explicit return types for better API documentation and type safety.",
+        "library": "TypeScript"
+      },
+      "catches": [
+        "Exported functions without return type",
+        "Missing type annotations",
+        "Inferred types that may change"
+      ],
+      "fix": [
+        "Add return type annotation",
+        "Use explicit types for exports",
+        "Document function signatures"
+      ],
+      "condition": {
+        "type": "exists",
+        "field": "content"
+      },
+      "action": {
+        "type": "flag",
+        "severity": "medium",
+        "message": "Exported function should have explicit return type"
+      }
+    },
+    {
+      "id": "SEC_HARDCODED_SECRET",
+      "name": "Hardcoded secret detected",
+      "description": "Hardcoded secrets, passwords, or API keys detected in code.",
+      "enabled": true,
+      "priority": 1,
+      "frameworks": [],
+      "category": "security",
+      "recommendation": {
+        "title": "Remove hardcoded secrets",
+        "description": "Use environment variables or secret management services instead of hardcoding secrets.",
+        "library": "General"
+      },
+      "catches": [
+        "Hardcoded passwords",
+        "Hardcoded API keys",
+        "Hardcoded secrets"
+      ],
+      "fix": [
+        "Use environment variables",
+        "Use secret management service",
+        "Remove hardcoded values"
+      ],
+      "condition": {
+        "type": "regex",
+        "pattern": "password\\s*=\\s*['\"][^'\"]+['\"]|api[_-]?key\\s*=\\s*['\"][A-Za-z0-9]{20,}['\"]|secret\\s*=\\s*['\"][^'\"]+['\"]",
+        "fileExtensions": [".ts", ".js", ".py", ".java"]
+      },
+      "action": {
+        "type": "flag",
+        "severity": "critical",
+        "message": "Hardcoded secret detected"
+      }
+    },
+    {
+      "id": "EXPRESS_NO_RATE_LIMIT",
+      "name": "Express rate limiting missing",
+      "description": "Express routes should have rate limiting to prevent abuse.",
+      "enabled": true,
+      "priority": 1,
+      "frameworks": ["express"],
+      "category": "security",
+      "recommendation": {
+        "title": "Add rate limiting",
+        "description": "Use express-rate-limit middleware to protect endpoints.",
+        "library": "Express"
+      },
+      "catches": [
+        "Missing rate limiting",
+        "Potential abuse",
+        "DDoS vulnerability"
+      ],
+      "fix": [
+        "Install express-rate-limit",
+        "Configure rate limits per route",
+        "Set appropriate thresholds"
+      ],
+      "condition": {
+        "type": "regex",
+        "pattern": "app\\.(get|post|put|delete|use)\\s*\\(",
+        "fileExtensions": [".js", ".ts"]
+      },
+      "action": {
+        "type": "flag",
+        "severity": "high",
+        "message": "Route without rate limiting"
+      }
+    },
+    {
+      "id": "ACCESS_SKIP_LINK",
+      "name": "Missing skip link",
+      "description": "Add a skip link to allow keyboard users to bypass navigation.",
+      "enabled": true,
+      "priority": 1,
+      "frameworks": ["react", "vue", "nextjs", "nuxt", "astro", "svelte", "angular"],
+      "category": "accessibility",
+      "recommendation": {
+        "title": "Add skip navigation link",
+        "description": "Add a skip link to allow keyboard users to bypass navigation.",
+        "library": "WCAG 2.1 B1"
+      },
+      "catches": [
+        "No skip navigation link",
+        "Keyboard users can't bypass navigation",
+        "WCAG 2.1 B1 violation"
+      ],
+      "fix": [
+        "Add a skip link at the top of the page",
+        "Make it visible on focus",
+        "Link to the main content area"
+      ],
+      "condition": {
+        "type": "regex",
+        "pattern": "skip.?link|<a[^>]+href=\"#",
+        "fileExtensions": [".html", ".tsx", ".jsx", ".vue", ".svelte", ".astro"]
+      },
+      "action": {
+        "type": "flag",
+        "severity": "medium",
+        "message": "Missing skip link"
+      }
+    },
+    {
+      "id": "CLEAN_CONSOLE_LOG",
+      "name": "Console log in production",
+      "description": "Remove console.log statements before deploying to production.",
+      "enabled": true,
+      "priority": 1,
+      "frameworks": [],
+      "category": "cleanliness",
+      "recommendation": {
+        "title": "Remove console statements",
+        "description": "Console.log statements should be removed or replaced with proper logging.",
+        "library": "General"
+      },
+      "catches": [
+        "Console.log statements",
+        "Debug code in production",
+        "Information leakage"
+      ],
+      "fix": [
+        "Remove console.log statements",
+        "Use proper logging library",
+        "Configure log levels"
+      ],
+      "condition": {
+        "type": "regex",
+        "pattern": "console\\.(log|debug|info|warn|error)\\(",
+        "fileExtensions": [".js", ".ts", ".jsx", ".tsx"]
+      },
+      "action": {
+        "type": "flag",
+        "severity": "low",
+        "message": "Console statement found"
+      }
+    }
+  ]
+}

@@ -25,6 +25,8 @@ export interface ExecutorOptions {
   streamingThreshold?: number;
   /** When true, streaming ignores excludePatterns. Default: false (excludePatterns takes precedence) */
   streamingIgnoreExclude?: boolean;
+  /** Skip regex validation at execute time (for complex patterns that trigger ReDoS protection). Default: false */
+  skipRegexValidation?: boolean;
 }
 
 /**
@@ -63,7 +65,8 @@ export class Executor {
       maxLineLength: options.maxLineLength ?? 10000,
       streaming: options.streaming ?? false,
       streamingThreshold: options.streamingThreshold ?? 1024 * 1024, // 1MB default
-      streamingIgnoreExclude: options.streamingIgnoreExclude ?? false
+      streamingIgnoreExclude: options.streamingIgnoreExclude ?? false,
+      skipRegexValidation: options.skipRegexValidation ?? false
     };
     this.pipeline = new Pipeline();
     this.errors = [];
@@ -475,10 +478,12 @@ export class Executor {
     blocked?: boolean;
     error?: string;
   }> {
-    // Inject evaluateCondition callback into context for composite conditions
+    // Inject evaluateCondition callback and skipRegexValidation into context for composite conditions
     const contextWithCallback: ExecutionContext = {
       ...context,
-      evaluateCondition: (config, ctx, f) => this.registry.evaluateCondition(config, ctx, f)
+      evaluateCondition: (config, ctx, f) => this.registry.evaluateCondition(config, ctx, f),
+      // Allow runtime context to override engine-level setting
+      skipRegexValidation: context.skipRegexValidation ?? this.options.skipRegexValidation
     };
 
     // Evaluate condition(s) - support both single condition and array of conditions
